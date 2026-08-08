@@ -44,33 +44,45 @@ export function subscribePlayback(fn: (s: PlaybackState) => void): () => void {
   };
 }
 
-// Set of animated object names — SyncViewer checks this to avoid fighting
-// with the mixer during playback.
-const _animatedNames = new Set<string>();
+// ---------------------------------------------------------------------------
+// Names of objects driven by the GLB (skinned meshes, bones).
+// SyncViewer reads these to avoid creating duplicate regular meshes or
+// fighting with the mixer during playback.
+// ---------------------------------------------------------------------------
 
-export function setAnimatedObjectNames(names: Set<string>) {
-  _animatedNames.clear();
-  for (const n of names) _animatedNames.add(n);
+const _glbObjectNames = new Set<string>();
+
+export function setGlbObjectNames(names: Set<string>) {
+  _glbObjectNames.clear();
+  for (const n of names) _glbObjectNames.add(n);
 }
 
+/** True when SyncViewer should skip creating a regular Mesh for this object
+ *  (it's a skinned mesh handled by the GLB). Always true regardless of playback. */
+export function isGlbObject(name: string): boolean {
+  return _glbObjectNames.has(name);
+}
+
+/** True when SyncViewer should skip position/quaternion/scale updates —
+ *  the mixer is driving this object during playback. */
 export function shouldSkipBlenderTransform(name: string): boolean {
-  return _playback.playing && _animatedNames.has(name);
+  return _playback.playing && _glbObjectNames.has(name);
 }
 
 // ---------------------------------------------------------------------------
-// AnimationController
+// AnimationController — loads the animation GLB, adds skinned meshes + bones
+// to the scene, and drives the AnimationMixer.
 // ---------------------------------------------------------------------------
 export function AnimationController() {
   const animationGlb = useBlenderStore((s) => s.animationGlb);
-  const sceneData = useBlenderStore((s) => s.sceneData);
   const scene = useThree((r) => r.scene);
 
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<Map<string, THREE.AnimationAction>>(new Map());
-  const clipsRef = useRef<THREE.AnimationClip[]>([]);
+  const glbRootRef = useRef<THREE.Group | null>(null);
   const prevSizeRef = useRef(0);
 
-  // ---- Load GLB + extract clips when new animation data arrives ----
+  // ---- Load GLB + add scene objects + extract clips ----
   useEffect(() => {
     if (!animationGlb || !scene) return;
 
@@ -80,9 +92,22 @@ export function AnimationController() {
 
     const loader = new GLTFLoader();
 
-    loader.parse(animationGlb, "", async (gltf) => {
-      const clips = gltf.animations;
-      if (clips.length === 0) return;
+    loader.parse(animationGlb, "", (gltf) => {
+      // Remove old GLB scene objects
+      if (glbRootRef.current) {
+        scene.remove(glbRootRef.current);
+        // Dispose skinned meshes and skeletons
+        glbRootRef.current.traverse((child) => {
+          if (child instanceof THREE.SkinnedMesh) {
+            child.geometry?.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((m) => m.dispose());
+            } else {
+              child.material?.dispose();
+            }
+          }
+        });
+      }
 
       // Tear down old mixer
       if (mixerRef.current) {
@@ -90,7 +115,21 @@ export function AnimationController() {
         mixerRef.current.uncacheRoot(scene);
       }
 
-      clipsRef.current = clips;
+      // Collect names of all GLB objects (skinned meshes, bones, armature nodes)
+      const glbNames = new Set<string>();
+      gltf.scene.traverse((child) => {
+        if (child.name) glbNames.add(child.name);
+      });
+      setGlbObjectNames(glbNames);
+
+      // Add the glTF scene to the Three.js scene
+      scene.add(gltf.scene);
+      glbRootRef.current = gltf.scene;
+
+      // Build clips and mixer
+      const clips = gltf.animations;
+      if (clips.length === 0) return;
+
       const mixer = new THREE.AnimationMixer(scene);
       mixerRef.current = mixer;
       actionsRef.current.clear();
@@ -98,17 +137,6 @@ export function AnimationController() {
       for (const clip of clips) {
         actionsRef.current.set(clip.name, mixer.clipAction(clip));
       }
-
-      // Track which objects are driven by animations
-      const names = new Set<string>();
-      for (const clip of clips) {
-        for (const track of clip.tracks) {
-          // Track name format: "ObjectName.property"
-          const dot = track.name.lastIndexOf(".");
-          if (dot > 0) names.add(track.name.substring(0, dot));
-        }
-      }
-      setAnimatedObjectNames(names);
 
       // Auto-select first clip
       const first = clips[0];
@@ -163,7 +191,6 @@ export function AnimationController() {
       const action = actionsRef.current.get(s.activeClip);
       if (action) {
         if (!s.playing) {
-          // Scrubbing — seek to currentTime
           const diff = Math.abs(action.time - s.currentTime);
           if (diff > 0.03) {
             action.time = s.currentTime;

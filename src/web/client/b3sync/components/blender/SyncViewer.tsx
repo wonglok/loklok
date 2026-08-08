@@ -14,7 +14,7 @@ import {
 } from "../utils/meshBuilder";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import type { BlenderObject, GeoBuffer } from "../types/blenderTypes";
-import { shouldSkipBlenderTransform } from "./AnimationController";
+import { shouldSkipBlenderTransform, isGlbObject } from "./AnimationController";
 
 // ---------------------------------------------------------------------------
 // Module-level caches
@@ -203,6 +203,9 @@ export function SyncViewer() {
     const resolved: ObjectWithKey[] = [];
 
     for (const obj of sceneData.objects) {
+      // Skip objects handled by the GLB (skinned meshes, armatures)
+      if (isGlbObject(obj.name)) continue;
+
       const geoBuf = geoBuffers.get(obj.name);
 
       const map = obj.texture
