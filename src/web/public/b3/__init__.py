@@ -67,19 +67,17 @@ _state = {
     "error": "",
     "clients": set(),
     "loop": None,
-    "server": None,       # the websockets Server handle (for shutdown)
+    "server": None,
     "thread": None,
     "hdr_cache": None,    # (width, height, pixels_bytes, key) or None
-    "hdr_sent": set(),    # set of ws ids that have already received HDR
     "tex_cache": {},      # image_name → (mime, bytes, key)
-    "tex_sent": {},       # ws_id → set of image_names already sent
-    "geo_sent": {},       # ws_id → set of "name@version" already sent
-    "camera_sync_enabled": True,  # whether to send camera data to clients
-    "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
-    "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
-    "lights_cache": None,       # serialized lights JSON string (change detection)
-    "lights_sent": set(),       # ws ids that already received current lights payload
-    "port": 0,            # actual port the running server is bound to (0 = none)
+    "geo_cache": {},      # obj_name → (version, vCount, iCount, hasUVs, blob_bytes)
+    "camera_sync_enabled": True,
+    "scene_cams_cache": None,
+    "scene_cams_sent": set(),
+    "lights_cache": None,
+    "lights_sent": set(),
+    "port": 0,
 }
 
 
@@ -785,10 +783,11 @@ def _extract_lights():
 # ---------------------------------------------------------------------------
 
 def _handle_request_geo(obj_name):
-    """Respond to a geometry request. Returns (header_json, blob_bytes) or None."""
-    _, geometry_dict = get_scene_data()
-    if obj_name in geometry_dict:
-        geo_version, v_count, i_count, has_uvs, blob = geometry_dict[obj_name]
+    """Respond to a geometry request from the main-thread-populated cache."""
+    with _lock:
+        geo_entry = _state["geo_cache"].get(obj_name)
+    if geo_entry is not None:
+        geo_version, v_count, i_count, has_uvs, blob = geo_entry
         header = json.dumps({
             "type": "geo",
             "name": obj_name,
@@ -802,10 +801,11 @@ def _handle_request_geo(obj_name):
 
 
 def _handle_request_tex(tex_name):
-    """Respond to a texture request. Returns (header_json, blob_bytes) or None."""
-    textures = _extract_textures()
-    if tex_name in textures:
-        mime, bytes_data, _ = textures[tex_name]
+    """Respond to a texture request from the main-thread-populated cache."""
+    with _lock:
+        tex_entry = _state["tex_cache"].get(tex_name)
+    if tex_entry is not None:
+        mime, bytes_data, _ = tex_entry
         header = json.dumps({
             "type": "tex",
             "name": tex_name,
@@ -816,8 +816,9 @@ def _handle_request_tex(tex_name):
 
 
 def _handle_request_hdr():
-    """Respond to an HDR request. Returns (header_json, blob_bytes_or_None) or None."""
-    hdr = _extract_world_hdr()
+    """Respond to an HDR request from the main-thread-populated cache."""
+    with _lock:
+        hdr = _state["hdr_cache"]
     if hdr is not None:
         w, h, pixels_bytes, _ = hdr
         header = json.dumps({"type": "hdr", "width": w, "height": h})
@@ -933,22 +934,34 @@ def _server_thread(port: int):
 # Timer (fires at ~5 Hz from Blender's main thread)
 # ---------------------------------------------------------------------------
 def _timer():
-    """Blender timer — sends scene data, camera, lights, HDR intensity at ~15 Hz.
-    Binary blobs (geometry, textures, HDR) are sent on-demand via request/response."""
+    """Blender timer — extracts data on main thread, sends lightweight JSON at ~15 Hz.
+    Binary blobs (geometry, textures, HDR) are cached for on-demand request/response."""
     try:
         with _lock:
             loop = _state["loop"]
             current = list(_state["clients"])
 
         if loop is not None and not loop.is_closed() and current:
-            # --- Scene data (JSON only — transforms + graph, no geometry blobs) ---
+            # --- Extract scene data + geometry on main thread, cache for requests ---
             data_json, geometry_dict = get_scene_data()
+            with _lock:
+                for obj_name, geo_entry in geometry_dict.items():
+                    _state["geo_cache"][obj_name] = geo_entry
 
+            # Send lightweight scene JSON (no blobs)
             for ws in current:
                 try:
                     asyncio.run_coroutine_threadsafe(ws.send(data_json), loop)
                 except RuntimeError:
                     pass
+
+            # --- Extract HDR on main thread, cache for requests ---
+            hdr = _extract_world_hdr()
+            with _lock:
+                if hdr is not None:
+                    _state["hdr_cache"] = hdr
+                else:
+                    _state["hdr_cache"] = None
 
             # --- HDR intensity (lightweight JSON, every tick) ---
             hdr_intensity_msg = json.dumps({
@@ -961,7 +974,10 @@ def _timer():
                 except RuntimeError:
                     continue
 
-            # --- Camera data (JSON) — viewport every tick, scene cameras on change ---
+            # --- Extract textures on main thread, cache for requests ---
+            _extract_textures()  # populates _state["tex_cache"] internally
+
+            # --- Camera data (JSON) ---
             with _lock:
                 send_cam = _state["camera_sync_enabled"]
             if send_cam:
@@ -994,7 +1010,7 @@ def _timer():
                     except RuntimeError:
                         pass
 
-            # --- Scene lights — send once per client, re-send only on change ---
+            # --- Scene lights ---
             lights_json = json.dumps({
                 "type": "lights",
                 "lights": _extract_lights(),
