@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { useBlenderStore } from "./blenderStore";
 import { useSettingsStore } from "./settingsStore";
-import type { CameraData, LightData, AnimationClipData } from "../types/blenderTypes";
+import type {
+  CameraData,
+  LightData,
+  AnimationClipData,
+} from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -98,10 +102,13 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
 
     // ---- message ----
     socket.onmessage = (event: MessageEvent) => {
+      console.log(JSON.parse(event.data));
+
       // --- Binary: pixel data (HDR, texture, or geometry) ---
       if (event.data instanceof ArrayBuffer) {
         const pending = get().pendingBinary;
         set({ pendingBinary: null });
+
         if (!pending) return;
 
         if (pending.kind === "hdr") {
@@ -278,9 +285,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           }));
           useBlenderStore.getState().setLights(lights);
         } else if (data.type === "animation") {
-          const clips = (
-            Array.isArray(data.clips) ? data.clips : []
-          ) as any[];
+          const clips = (Array.isArray(data.clips) ? data.clips : []) as any[];
           set({
             pendingBinary: {
               kind: "animation",

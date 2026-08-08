@@ -1507,7 +1507,7 @@ class B3SYNC_PT_panel(bpy.types.Panel):
                 col.alert = True
                 col.label(text="Port changed — restart to apply", icon='ERROR')
         else:
-            layout.label(text="○  STOPPED", icon='CANCEL')
+            layout.label(text="STOPPED", icon='CANCEL')
 
         layout.separator()
 

@@ -93,6 +93,7 @@ function buildClip(data: AnimationClipData): THREE.AnimationClip {
 // AnimationController — drives the AnimationMixer from the store + playback
 // ---------------------------------------------------------------------------
 export function AnimationController() {
+  const sceneData = useBlenderStore((s) => s.sceneData);
   const animations = useBlenderStore((s) => s.animations);
   const scene = useThree((r) => r.scene);
 
@@ -160,7 +161,7 @@ export function AnimationController() {
         playing: false,
       });
     }
-  }, [animations, scene]);
+  }, [animations, scene, sceneData]);
 
   // ---- Subscribe to playback changes from the sidebar ----
   const playbackRef = useRef(_playback);
