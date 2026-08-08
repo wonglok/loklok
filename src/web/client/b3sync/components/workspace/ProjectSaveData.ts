@@ -27,6 +27,9 @@ export interface ProjectSaveData {
   lights: LightData[];
   cameras: CameraData[];
 
+  /** The .blend file path this project was synced from. */
+  blenderFilePath: string | null;
+
   /** HDR env-map dimensions (null = no HDR). */
   hdrWidth: number | null;
   hdrHeight: number | null;
@@ -42,6 +45,7 @@ export interface LoadedProjectData {
   hdrIntensity: number;
   geoBuffers: Map<string, GeoBuffer>;
   texData: Map<string, TextureData>;
+  blenderFilePath: string | null;
 }
 
 /** Per-geometry metadata stored in the manifest (needed for unpacking binary blobs). */

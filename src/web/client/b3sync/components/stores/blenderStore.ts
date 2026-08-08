@@ -36,6 +36,12 @@ interface BlenderStore {
   lights: LightData[];
   /** Raw animation GLB binary from Blender — loaded by AnimationController via GLTFLoader. */
   animationGlb: ArrayBuffer | null;
+  /** The .blend file path sent by Blender on connect — used to detect mismatches. */
+  blenderFilePath: string | null;
+  /** The .blend file path stored in the project save data. */
+  projectBlendPath: string | null;
+  /** True when the connected Blender file doesn't match the project's expected file. */
+  blendPathMismatch: boolean;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -51,6 +57,10 @@ interface BlenderStore {
   setLights: (next: LightData[]) => void;
   /** Store the latest animation GLB blob — AnimationController picks it up. */
   setAnimationGlb: (data: ArrayBuffer | null) => void;
+  /** Called when Blender sends its .blend file path. Compares with stored path. */
+  setBlenderFilePath: (path: string | null) => void;
+  /** Set the project's expected blend path (from save data). */
+  setProjectBlendPath: (path: string | null) => void;
 
   /** Bulk-load saved project data — all state set atomically. */
   loadSaveData: (data: {
@@ -61,6 +71,7 @@ interface BlenderStore {
     cameras: CameraData[];
     geoBuffers: Map<string, GeoBuffer>;
     texData: Map<string, TextureData>;
+    blenderFilePath: string | null;
   }) => void;
 }
 
@@ -77,6 +88,9 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectedCamera: null,
   lights: [],
   animationGlb: null,
+  blenderFilePath: null,
+  projectBlendPath: null,
+  blendPathMismatch: false,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -111,6 +125,20 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
 
   setAnimationGlb: (data) => set({ animationGlb: data }),
 
+  setBlenderFilePath: (path) =>
+    set((prev) => {
+      // Compare with stored project path
+      const mismatch = !!(
+        path &&
+        prev.projectBlendPath &&
+        path !== prev.projectBlendPath
+      );
+      return { blenderFilePath: path, blendPathMismatch: mismatch };
+    }),
+
+  setProjectBlendPath: (path) =>
+    set({ projectBlendPath: path, blendPathMismatch: false }),
+
   loadSaveData: (data) =>
     set({
       sceneData: data.sceneData,
@@ -120,5 +148,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
       cameras: data.cameras,
       geoBuffers: data.geoBuffers,
       texData: data.texData,
+      projectBlendPath: data.blenderFilePath ?? null,
+      blendPathMismatch: false,
     }),
 }));

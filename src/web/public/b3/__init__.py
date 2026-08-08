@@ -956,7 +956,7 @@ def _export_animation_glb():
             filepath=tmp_path,
             export_format='GLB',
             export_apply=True,
-            export_skins=False,
+            export_skins=True,
             export_cameras=False,
             export_lights=False,
             export_animations=True,
@@ -1006,6 +1006,19 @@ async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
     print(f"[B3Sync] Client connected ({len(_state['clients'])} total)")
+
+    # Send the .blend file path as the first message so the web client can
+    # verify it matches the project's expected source file.
+    blend_path = bpy.data.filepath
+    if blend_path:
+        try:
+            await websocket.send(json.dumps({
+                "type": "blend-file",
+                "path": blend_path,
+            }))
+        except Exception:
+            pass
+
     try:
         await websocket.wait_closed()
     except ConnectionClosed:

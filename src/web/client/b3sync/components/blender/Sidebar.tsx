@@ -148,6 +148,10 @@ export function Sidebar() {
   const [pb, setPb] = useState<PlaybackState>(getPlaybackState());
   useEffect(() => subscribePlayback(setPb), []);
 
+  const blendPathMismatch = useBlenderStore((s) => s.blendPathMismatch);
+  const blenderFilePath = useBlenderStore((s) => s.blenderFilePath);
+  const projectBlendPath = useBlenderStore((s) => s.projectBlendPath);
+
   const [filesOpen, setFilesOpen] = useState(false);
 
   const hasAnim = animationGlb !== null;
@@ -265,6 +269,42 @@ export function Sidebar() {
             />
             <span className="text-text-secondary">{config.label}</span>
           </div>
+
+          {blendPathMismatch && (
+            <div
+              className="
+                px-2.5 py-2 rounded-lg
+                border border-status-yellow/30 bg-status-yellow/5
+                text-[10px] leading-relaxed text-status-yellow/90
+              "
+            >
+              <div className="flex items-start gap-1.5">
+                <svg
+                  width="12" height="12" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className="shrink-0 mt-px"
+                >
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold">Blender file mismatch</span>
+                  <div className="mt-0.5 text-status-yellow/70 break-all">
+                    Connected: {blenderFilePath}
+                  </div>
+                  <div className="text-status-yellow/50 break-all">
+                    Expected: {projectBlendPath}
+                  </div>
+                  <div className="mt-1 text-status-yellow/60">
+                    Syncing is paused — save will overwrite the project with data
+                    from a different file.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Object count */}

@@ -187,6 +187,7 @@ export async function saveProject(
     objects: sceneData.objects,
     lights,
     cameras,
+    blenderFilePath: useBlenderStore.getState().blenderFilePath,
     hdrWidth: hdrData?.width ?? null,
     hdrHeight: hdrData?.height ?? null,
     hdrIntensity,
@@ -296,6 +297,7 @@ export async function loadProject(
     hdrIntensity: saveData.hdrIntensity ?? 1.0,
     geoBuffers,
     texData,
+    blenderFilePath: saveData.blenderFilePath ?? null,
   };
 }
 
