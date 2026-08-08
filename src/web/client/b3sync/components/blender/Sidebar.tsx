@@ -1,33 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
-import { FileManager } from "../workspace/FileManager";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
 // Sidebar — left panel with sync controls and status info
 // ---------------------------------------------------------------------------
-
-function FolderOpenIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" />
-      <path d="M2 6v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2H9.5" />
-      <path d="M2 10h5.5" />
-    </svg>
-  );
-}
 
 const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
   disconnected: { color: "bg-gray-500", label: "Disconnected" },
@@ -106,8 +85,6 @@ export function Sidebar() {
   const selectedCamera = useBlenderStore((s) => s.selectedCamera);
   const selectCamera = useBlenderStore((s) => s.selectCamera);
 
-  const [filesOpen, setFilesOpen] = useState(false);
-
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
 
@@ -160,27 +137,6 @@ export function Sidebar() {
           </svg>
           Back
         </Link>
-      </div>
-
-      <div className="p-2 flex">
-        {/* File manager button */}
-        <button
-          onClick={() => setFilesOpen(true)}
-          className="
-            flex items-center gap-1 px-2 py-1 rounded-md
-            text-[10px] text-text-muted
-            border border-border bg-surface-secondary
-            hover:text-text-secondary hover:bg-surface-tertiary
-            transition-all duration-150
-          "
-          title="Browse project files"
-        >
-          <FolderOpenIcon />
-          Virtual File Manager
-        </button>
-        {filesOpen && (
-          <FileManager open={filesOpen} onClose={() => setFilesOpen(false)} />
-        )}
       </div>
 
       {/* ---- Body ---- */}

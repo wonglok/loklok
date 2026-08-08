@@ -48,16 +48,6 @@ interface BlenderStore {
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
 
-  /** Bulk-load saved project data — all state set atomically. */
-  loadSaveData: (data: {
-    sceneData: SceneData;
-    hdrData: ImageData | null;
-    hdrIntensity: number;
-    lights: LightData[];
-    cameras: CameraData[];
-    geoBuffers: Map<string, GeoBuffer>;
-    texData: Map<string, TextureData>;
-  }) => void;
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({
@@ -103,16 +93,4 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
-
-
-  loadSaveData: (data) =>
-    set({
-      sceneData: data.sceneData,
-      hdrData: data.hdrData,
-      hdrIntensity: data.hdrIntensity,
-      lights: data.lights,
-      cameras: data.cameras,
-      geoBuffers: data.geoBuffers,
-      texData: data.texData,
-    }),
 }));
