@@ -3,7 +3,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
 import { useBlenderStore } from "../stores/blenderStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { useMemo } from "react";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +17,6 @@ export function CameraSync() {
   const cameraData = useBlenderStore((s) => s.cameraData);
   const selectedCamera = useBlenderStore((s) => s.selectedCamera);
   const cameras = useBlenderStore((s) => s.cameras);
-  const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
   const camera = useThree((s) => s.camera);
 
   const lo = useMemo(() => {
@@ -26,13 +24,8 @@ export function CameraSync() {
   }, []);
 
   useFrame(() => {
-    if (!cameraSyncOn) {
-      return;
-    }
-
     // Selected camera → first scene camera as default → viewport stream fallback
-    const activeCam =
-      selectedCamera ?? cameras[0] ?? (cameraSyncOn ? cameraData : null);
+    const activeCam = selectedCamera ?? cameras[0] ?? cameraData;
     if (!activeCam) return;
 
     lo.position.set(

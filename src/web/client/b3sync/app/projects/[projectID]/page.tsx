@@ -15,8 +15,6 @@ import { useParams } from "react-router-dom";
 const AUTOSAVE_DEBOUNCE_MS = 5000;
 
 export function SceneSyncEditor() {
-  const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
-
   const disconnect = useBlenderSyncStore((s) => s.disconnect);
 
   // ------------------------------------------------------------------
@@ -108,8 +106,6 @@ export function SceneSyncEditor() {
         <CanvasGPU>
           <SyncViewer />
           <CameraSync />
-
-          {!cameraSyncOn && <OrbitControls target={[0, 1, 0]} makeDefault />}
         </CanvasGPU>
       </div>
     </div>

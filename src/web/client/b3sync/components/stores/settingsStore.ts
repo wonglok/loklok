@@ -12,23 +12,21 @@ import { create } from "zustand";
 
 const STORAGE_KEY = "timeversation-settings";
 
-const DEFAULTS = { port: 8765, cameraSyncOn: true };
+const DEFAULTS = { port: 8765 };
 
 interface SettingsState {
   port: number;
-  cameraSyncOn: boolean;
 
   /** True once client-side localStorage values have been loaded. */
   hydrated: boolean;
 
   setPort: (port: number) => void;
-  setCameraSyncOn: (on: boolean) => void;
 
   /** Call once in a useEffect to load persisted settings on the client. */
   hydrate: () => void;
 }
 
-function loadSettings(): { port: number; cameraSyncOn: boolean } {
+function loadSettings(): { port: number } {
   if (typeof window === "undefined") return DEFAULTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -36,10 +34,6 @@ function loadSettings(): { port: number; cameraSyncOn: boolean } {
       const parsed = JSON.parse(raw);
       return {
         port: typeof parsed.port === "number" ? parsed.port : DEFAULTS.port,
-        cameraSyncOn:
-          typeof parsed.cameraSyncOn === "boolean"
-            ? parsed.cameraSyncOn
-            : DEFAULTS.cameraSyncOn,
       };
     }
   } catch {
@@ -48,7 +42,7 @@ function loadSettings(): { port: number; cameraSyncOn: boolean } {
   return DEFAULTS;
 }
 
-function persist(state: { port: number; cameraSyncOn: boolean }) {
+function persist(state: { port: number }) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
@@ -66,7 +60,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     const saved = loadSettings();
     // Only update if values differ from defaults (avoids unnecessary re-render)
-    if (saved.port !== DEFAULTS.port || saved.cameraSyncOn !== DEFAULTS.cameraSyncOn) {
+    if (saved.port !== DEFAULTS.port) {
       set({ ...saved, hydrated: true });
     } else {
       set({ hydrated: true });
@@ -74,12 +68,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setPort: (port) => {
-    persist({ port, cameraSyncOn: get().cameraSyncOn });
+    persist({ port });
     set({ port });
-  },
-
-  setCameraSyncOn: (cameraSyncOn) => {
-    persist({ port: get().port, cameraSyncOn });
-    set({ cameraSyncOn });
   },
 }));

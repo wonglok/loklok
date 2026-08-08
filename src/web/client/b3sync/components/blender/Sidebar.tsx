@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { FileManager } from "../workspace/FileManager";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
@@ -96,33 +95,6 @@ function RadioIcon() {
   );
 }
 
-function ToggleIcon({ on }: { on: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {on ? (
-        <>
-          <rect x="1" y="5" width="22" height="14" rx="7" />
-          <circle cx="17" cy="12" r="4" fill="currentColor" />
-        </>
-      ) : (
-        <>
-          <rect x="1" y="5" width="22" height="14" rx="7" />
-          <circle cx="7" cy="12" r="4" fill="currentColor" />
-        </>
-      )}
-    </svg>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
@@ -133,9 +105,6 @@ export function Sidebar() {
   const sceneCameras = useBlenderStore((s) => s.cameras);
   const selectedCamera = useBlenderStore((s) => s.selectedCamera);
   const selectCamera = useBlenderStore((s) => s.selectCamera);
-
-  const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
-  const setCameraSyncOn = useSettingsStore((s) => s.setCameraSyncOn);
 
   const [filesOpen, setFilesOpen] = useState(false);
 
@@ -257,31 +226,8 @@ export function Sidebar() {
             Camera
           </div>
 
-          <button
-            onClick={() => {
-              const next = !cameraSyncOn;
-              setCameraSyncOn(next);
-              if (next) selectCamera(null);
-            }}
-            className={`
-              flex items-center gap-2 w-full px-2.5 py-2 rounded-lg
-              border transition-all duration-150
-              ${
-                cameraSyncOn
-                  ? "border-accent/30 bg-accent-subtle text-accent hover:bg-accent-subtle/80"
-                  : "border-border bg-surface-secondary text-text-muted hover:bg-surface-tertiary"
-              }
-            `}
-          >
-            <CameraIcon />
-            <span className="flex-1 text-left">Camera Sync</span>
-            <span className={cameraSyncOn ? "text-accent" : "text-text-muted"}>
-              <ToggleIcon on={cameraSyncOn} />
-            </span>
-          </button>
-
           {/* Camera detail when syncing */}
-          {cameraSyncOn && isConnected && cameraData && (
+          {isConnected && cameraData && (
             <div className="mt-1 space-y-0.5 pl-2 text-[10px] text-text-muted leading-relaxed">
               <div className="flex justify-between">
                 <span>FOV</span>
@@ -334,7 +280,7 @@ export function Sidebar() {
             </div>
           )}
 
-          {cameraSyncOn && isConnected && !cameraData && (
+          {isConnected && !cameraData && (
             <div className="text-[10px] text-status-yellow/80 pl-2">
               Waiting for viewport data…
             </div>
