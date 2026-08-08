@@ -90,6 +90,9 @@ function materialParamsFromObject(
 
 const LERP_SMOOTH = 0.15;
 
+/** Flips to true once all objects have their geometry loaded on the first full sync. */
+let _ready = false;
+
 const _mat4 = new THREE.Matrix4();
 
 // ---------------------------------------------------------------------------
@@ -201,6 +204,15 @@ export function Meshes() {
       }
     }
 
+    // ---- Mark ready once all objects have geometry on first full sync ----
+    if (!_ready && sceneData.objects.length > 0) {
+      const allHaveGeo = sceneData.objects.every((obj) => {
+        const buf = geoBuffers.get(obj.name);
+        return buf && buf.version === obj.version;
+      });
+      if (allHaveGeo) _ready = true;
+    }
+
     // ---- Cleanup stale meshes ----
     for (const [name, entry] of meshes) {
       if (!incomingNames.has(name)) {
@@ -231,6 +243,8 @@ export function Meshes() {
       cached.mesh.instanceMatrix.needsUpdate = true;
     }
   });
+
+  if (!_ready) return null;
 
   return null;
 }
