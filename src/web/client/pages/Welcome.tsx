@@ -13,7 +13,6 @@ export default function Welcome() {
           >
             /api/health →
           </a>
-
           <a
             href="/api/blender/plugin.zip"
             className="px-4 py-2 rounded-lg text-white bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
@@ -26,6 +25,12 @@ export default function Welcome() {
             className="px-4 py-2 rounded-lg text-white bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
           >
             Projects
+          </a>
+          <a
+            href="/receiver"
+            className="px-4 py-2 rounded-lg text-white bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
+          >
+            Blender ThreeJS Sync
           </a>
         </div>
       </div>

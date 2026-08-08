@@ -1,15 +1,15 @@
 "use client";
 
-import { CameraSync } from "../../../components/blender/CameraSync";
-import { CanvasGPU } from "../../../components/blender/CanvasGPU";
-import { Sidebar } from "../../../components/blender/Sidebar";
-import { SyncViewer } from "../../../components/blender/SyncViewer";
+import { CameraSync } from "../../components/blender/CameraSync";
+import { CanvasGPU } from "../../components/blender/CanvasGPU";
+import { Sidebar } from "../../components/blender/Sidebar";
+import { SyncViewer } from "../../components/blender/SyncViewer";
 
-import { useBlenderSyncStore } from "../../../components/stores/blenderSyncStore";
-import { useBlenderStore } from "../../../components/stores/blenderStore";
-import { useSettingsStore } from "../../../components/stores/settingsStore";
-import { useProjectStore } from "../../../components/stores/projectStore";
-import { LoadingScreen } from "../../../components/workspace/LoadingScreen";
+import { useBlenderSyncStore } from "../../components/stores/blenderSyncStore";
+import { useBlenderStore } from "../../components/stores/blenderStore";
+import { useSettingsStore } from "../../components/stores/settingsStore";
+import { useProjectStore } from "../../components/stores/projectStore";
+import { LoadingScreen } from "../../components/workspace/LoadingScreen";
 import { OrbitControls } from "@react-three/drei";
 import { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
