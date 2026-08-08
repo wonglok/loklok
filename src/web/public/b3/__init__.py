@@ -353,6 +353,8 @@ def get_scene_data():
             for m in obj.modifiers
         )
 
+        eval_obj = None
+
         if has_armature:
             # Use original (undeformed) mesh so skinning works in Three.js
             mesh = obj.data
@@ -537,7 +539,7 @@ def get_scene_data():
         )
 
         bm.free()
-        if not has_armature:
+        if eval_obj is not None:
             eval_obj.to_mesh_clear()
 
         # --- Rig data (skeleton + skin + animation) ---

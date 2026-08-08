@@ -62,13 +62,17 @@ export function SyncViewer() {
   const clipRef = useRef<Map<string, THREE.AnimationClip[]>>(new Map());
 
   const gl = useThree((r) => r.gl);
+  const camera = useThree((r) => r.camera);
 
+  // ------------------------------------------------------------------
+  // Default scene setup — camera + ambient light so the canvas is never black
+  // ------------------------------------------------------------------
   useEffect(() => {
-    //
-    //
-  }, []);
-  //
-  //
+    if (camera && camera.position.length() < 0.1) {
+      camera.position.set(5, 5, 5);
+      camera.lookAt(0, 0, 0);
+    }
+  }, [camera]);
 
   // ------------------------------------------------------------------
   // Apply HDR environment map (only when pixel data changes)
