@@ -2,19 +2,18 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
-import { useThree } from "@react-three/fiber";
+import { useThree, useFrame } from "@react-three/fiber";
 import { useBlenderStore } from "../../stores/blenderStore";
 import {
   buildGeometry,
   buildMaterial,
   computeMaterialCacheKey,
   getOrCreateTexture,
-  composeMatrix,
   type BuildMaterialParams,
 } from "../../utils/meshBuilder";
 
 // ---------------------------------------------------------------------------
-// Module-level cache
+// Types
 // ---------------------------------------------------------------------------
 interface CachedMesh {
   mesh: THREE.InstancedMesh;
@@ -22,11 +21,46 @@ interface CachedMesh {
   materialKey: string;
 }
 
+interface TransformState {
+  targetPos: THREE.Vector3;
+  targetQuat: THREE.Quaternion;
+  targetScale: THREE.Vector3;
+  currentPos: THREE.Vector3;
+  currentQuat: THREE.Quaternion;
+  currentScale: THREE.Vector3;
+  initialized: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Module-level transform state — persisted across renders
+// ---------------------------------------------------------------------------
+const _transformStates = new Map<string, TransformState>();
+
+function getOrCreateTransform(name: string): TransformState {
+  let s = _transformStates.get(name);
+  if (!s) {
+    s = {
+      targetPos: new THREE.Vector3(),
+      targetQuat: new THREE.Quaternion(),
+      targetScale: new THREE.Vector3(1, 1, 1),
+      currentPos: new THREE.Vector3(),
+      currentQuat: new THREE.Quaternion(),
+      currentScale: new THREE.Vector3(1, 1, 1),
+      initialized: false,
+    };
+    _transformStates.set(name, s);
+  }
+  return s;
+}
+
+function disposeTransform(name: string): void {
+  _transformStates.delete(name);
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Derive material params from a Blender object + resolved textures. */
 function materialParamsFromObject(
   obj: any,
   map: THREE.Texture | null,
@@ -54,9 +88,13 @@ function materialParamsFromObject(
   };
 }
 
+const LERP_SMOOTH = 0.15;
+
+const _mat4 = new THREE.Matrix4();
+
 // ---------------------------------------------------------------------------
 // Meshes — each Blender object gets its own InstancedMesh.
-// Geometry and material are built and cached independently.
+// Transforms are interpolated via useFrame (lerp / slerp).
 // ---------------------------------------------------------------------------
 
 export function Meshes() {
@@ -72,6 +110,7 @@ export function Meshes() {
     sceneRef.current = scene;
   }, [scene]);
 
+  // ---- Build / rebuild meshes when scene data, textures, or geometry change ----
   useEffect(() => {
     const sc = sceneRef.current;
     if (!sc) return;
@@ -101,7 +140,7 @@ export function Meshes() {
         ? getOrCreateTexture(obj.emissiveMap, texData, "color")
         : null;
 
-      // ---- Build material (cached independently of geometry) ----
+      // ---- Build material ----
       const matParams = materialParamsFromObject(
         obj,
         map,
@@ -112,9 +151,26 @@ export function Meshes() {
       );
       const material = buildMaterial(matParams);
 
-      // ---- Compute version keys ----
+      // ---- Version keys ----
       const geoVersion = geoBuf?.version ?? "";
       const matKey = computeMaterialCacheKey(matParams);
+
+      // ---- Set target transform from Blender data ----
+      const tx = getOrCreateTransform(obj.name);
+      const wasNew = !meshes.has(obj.name);
+      tx.targetPos.set(obj.position[0], obj.position[1], obj.position[2]);
+      tx.targetQuat.set(
+        obj.quaternion[0],
+        obj.quaternion[1],
+        obj.quaternion[2],
+        obj.quaternion[3],
+      );
+      tx.targetScale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
+
+      // Reset interpolation on first appearance so next frame snaps (LERP 1.0)
+      if (wasNew) {
+        tx.initialized = false;
+      }
 
       // ---- Check if rebuild needed ----
       let cached = meshes.get(obj.name);
@@ -130,25 +186,18 @@ export function Meshes() {
         }
 
         if (geoBuf && geoBuf.version === obj.version) {
-          // Build geometry (cached independently of material)
           const geo = buildGeometry(geoBuf, !!normalMap);
-
           const im = new THREE.InstancedMesh(geo, material, 1);
           im.name = obj.name;
           im.castShadow = true;
           im.receiveShadow = true;
           sc.add(im);
 
+          // Set initial matrix from current (will be set in useFrame)
+
           cached = { mesh: im, geoVersion, materialKey: matKey };
           meshes.set(obj.name, cached);
         }
-      }
-
-      // ---- Update transform ----
-      if (cached) {
-        const m = composeMatrix(obj.position, obj.quaternion, obj.scale);
-        cached.mesh.setMatrixAt(0, m);
-        cached.mesh.instanceMatrix.needsUpdate = true;
       }
     }
 
@@ -157,9 +206,31 @@ export function Meshes() {
       if (!incomingNames.has(name)) {
         sc.remove(entry.mesh);
         meshes.delete(name);
+        disposeTransform(name);
       }
     }
   }, [sceneData, texData, geoBuffers, scene]);
+
+  // ---- Per-frame interpolation (lerp position/scale, slerp quaternion) ----
+  useFrame(() => {
+    const meshes = meshesRef.current;
+    for (const [name, cached] of meshes) {
+      const tx = _transformStates.get(name);
+      if (!tx) continue;
+
+      // Snap on first frame, smooth interpolate thereafter
+      const f = tx.initialized ? LERP_SMOOTH : 1.0;
+      tx.initialized = true;
+
+      tx.currentPos.lerp(tx.targetPos, f);
+      tx.currentQuat.slerp(tx.targetQuat, f);
+      tx.currentScale.lerp(tx.targetScale, f);
+
+      _mat4.compose(tx.currentPos, tx.currentQuat, tx.currentScale);
+      cached.mesh.setMatrixAt(0, _mat4);
+      cached.mesh.instanceMatrix.needsUpdate = true;
+    }
+  });
 
   return null;
 }
