@@ -112,7 +112,7 @@ export function Sidebar() {
       <div className="p-2">
         {/* Home button */}
         <Link
-          to="/projects"
+          to="/"
           className="
           inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
           text-[10px] font-mono text-text-muted

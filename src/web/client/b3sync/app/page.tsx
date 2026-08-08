@@ -13,7 +13,7 @@ export default function Home() {
       </div>
 
       <Link
-        to="/projects"
+        to="/preview"
         className="
           inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
           border border-border bg-surface-secondary
