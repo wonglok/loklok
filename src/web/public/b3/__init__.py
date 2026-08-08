@@ -151,8 +151,8 @@ def _extract_node_graph(mat):
                         val = sock.default_value
                         # Handle Image data-blocks (TEX_IMAGE node "Image" socket)
                         if hasattr(val, 'name') and hasattr(val, 'size'):
-                            # bpy.types.Image — store just the name
-                            entry["value"] = val.name
+                            # bpy.types.Image — store slugified name
+                            entry["value"] = _slugify(val.name)
                         elif hasattr(val, '__iter__') and not isinstance(val, str):
                             entry["value"] = [round(float(v), 7) for v in val]
                         elif hasattr(val, '__len__') and not isinstance(val, str):
@@ -406,17 +406,17 @@ def get_scene_data():
                     if bc:
                         tex_img = _find_image_texture(bc)
                         if tex_img:
-                            texture = tex_img.name
+                            texture = _slugify(tex_img.name)
                             color = [1.0, 1.0, 1.0]  # white — texture determines color
                         else:
                             color = list(bc.default_value)[:3]
 
                     rim = _find_image_texture(node.inputs.get('Roughness'))
-                    roughness_map = rim.name if rim else None
+                    roughness_map = _slugify(rim.name) if rim else None
                     mim = _find_image_texture(node.inputs.get('Metallic'))
-                    metalness_map = mim.name if mim else None
+                    metalness_map = _slugify(mim.name) if mim else None
                     nim = _find_image_texture(node.inputs.get('Normal'))
-                    normal_map = nim.name if nim else None
+                    normal_map = _slugify(nim.name) if nim else None
 
                     r = node.inputs.get('Roughness')
                     if r and not r.is_linked:
@@ -429,7 +429,7 @@ def get_scene_data():
                     if ec:
                         em_tex = _find_image_texture(ec)
                         if em_tex:
-                            emissive_map = em_tex.name
+                            emissive_map = _slugify(em_tex.name)
                             emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
                         else:
                             emissive_color = list(ec.default_value)[:3]
@@ -664,7 +664,7 @@ def _extract_textures():
                 img = _find_image_texture(sock)  # direct bpy Image reference
                 if img is None:
                     continue
-                name = img.name
+                name = _slugify(img.name)
                 if name in textures:
                     continue
 

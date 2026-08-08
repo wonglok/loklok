@@ -4,6 +4,16 @@ import { useSettingsStore } from "./settingsStore";
 import type { CameraData, LightData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
+// Slugify — matches Blender add-on's _slugify() for cross-system consistency
+// ---------------------------------------------------------------------------
+/** Normalise a name into a portable slug: lowercase, runs of
+ *  non-alphanumeric chars → single hyphen, trim leading/trailing hyphens.
+ *  Matches the Blender plugin's `_slugify()` exactly. */
+export function slugify(name: string): string {
+  return name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
 
@@ -169,7 +179,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             set({
               pendingBinary: {
                 kind: "tex",
-                name: data.name as string,
+                name: slugify(data.name as string),
                 mime: data.mime as string,
               },
             });
@@ -237,7 +247,8 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           }));
           useBlenderStore.getState().setLights(lights);
         } else if (Array.isArray(data.objects)) {
-          // Normalise scene objects — ensure all flat material props have defaults
+          // Normalise scene objects — ensure all flat material props have defaults,
+          // and slugify all texture map names for consistent matching.
           const objects = (data.objects as any[]).map((obj: any) => ({
             ...obj,
             color: obj.color ?? [0.5, 0.5, 0.5],
@@ -249,6 +260,11 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             opacity: obj.opacity ?? 1.0,
             alphaTest: obj.alphaTest ?? 0.0,
             flatShading: obj.flatShading ?? false,
+            texture: typeof obj.texture === "string" ? slugify(obj.texture) : obj.texture,
+            roughnessMap: typeof obj.roughnessMap === "string" ? slugify(obj.roughnessMap) : obj.roughnessMap,
+            metalnessMap: typeof obj.metalnessMap === "string" ? slugify(obj.metalnessMap) : obj.metalnessMap,
+            normalMap: typeof obj.normalMap === "string" ? slugify(obj.normalMap) : obj.normalMap,
+            emissiveMap: typeof obj.emissiveMap === "string" ? slugify(obj.emissiveMap) : obj.emissiveMap,
           }));
           useBlenderStore.getState().setSceneData({ objects } as any);
           // Also extract cameras/lights if embedded in the scene payload

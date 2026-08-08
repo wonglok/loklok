@@ -82,18 +82,22 @@ function getOrCreateTexture(
   name: string,
   texData: Map<string, TextureData>,
 ): THREE.Texture | null {
+  // Normalise the name for consistent matching regardless of source
+  // (graph node, flat property, or tex message header).
+  const key = slugify(name);
+
   // Already loaded and cached — return immediately.
-  const existing = _textureCache.get(name);
+  const existing = _textureCache.get(key);
   if (existing) return existing;
 
-  const texEntry = texData.get(name);
+  const texEntry = texData.get(key);
   if (!texEntry) return null;
 
   // Already loading — don't start a second load; return null until it finishes.
-  if (_loadingTextures.has(name)) return null;
+  if (_loadingTextures.has(key)) return null;
 
   // Start async image load.
-  _loadingTextures.add(name);
+  _loadingTextures.add(key);
 
   const blob = new Blob([texEntry.bytes], { type: texEntry.mime });
   const url = URL.createObjectURL(blob);
@@ -107,17 +111,17 @@ function getOrCreateTexture(
 
   img.onload = () => {
     texture.needsUpdate = true;
-    _textureCache.set(name, texture);
-    _loadedTextures.add(name);
-    _loadingTextures.delete(name);
+    _textureCache.set(key, texture);
+    _loadedTextures.add(key);
+    _loadingTextures.delete(key);
     URL.revokeObjectURL(url);
 
     // Trigger React re-render so materials are rebuilt with the now-loaded texture.
     useBlenderStore.getState().bumpTextureVersion();
   };
   img.onerror = () => {
-    console.warn(`[TSLMaterial] failed to load texture: ${name}`);
-    _loadingTextures.delete(name);
+    console.warn(`[TSLMaterial] failed to load texture: ${key}`);
+    _loadingTextures.delete(key);
     URL.revokeObjectURL(url);
   };
   img.src = url;
@@ -280,7 +284,7 @@ function evaluateNode(
         "_isTexCoord" in (vecInput as any);
       return {
         _isTSLTexture: true,
-        imageName,
+        imageName: typeof imageName === "string" ? slugify(imageName) : imageName,
         useTexCoord: !!useTexCoord,
       };
     }
@@ -433,7 +437,13 @@ function resolveTSLNode(marker: any, mapTex: THREE.Texture | null): any {
 // Graph helpers
 // ---------------------------------------------------------------------------
 
-/** Extract all image texture names referenced in a shader graph. */
+/** Sluggish normalisation matching the Blender add-on's _slugify(). */
+function slugify(name: string): string {
+  return name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+
+/** Extract all image texture names referenced in a shader graph.
+ *  Names are slugified for consistent matching with tex messages. */
 export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
   if (!graph || !Array.isArray(graph.nodes)) return [];
   const names = new Set<string>();
@@ -441,20 +451,21 @@ export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
     if (node.type === "tex-image") {
       const imageSock = node.inputs.find((s) => s.name === "image");
       if (imageSock && typeof imageSock.value === "string") {
-        names.add(imageSock.value);
+        names.add(slugify(imageSock.value));
       }
     }
   }
   return [...names];
 }
 
-/** Extract all image texture names referenced in flat material properties. */
+/** Extract all image texture names referenced in flat material properties.
+ *  Names are slugified for consistent matching with tex messages. */
 export function getFlatImageNames(flat: FlatMaterialProps | undefined): string[] {
   if (!flat) return [];
   const names: string[] = [];
   for (const key of ["texture", "roughnessMap", "metalnessMap", "normalMap", "emissiveMap"] as const) {
     const val = flat[key];
-    if (typeof val === "string" && val) names.push(val);
+    if (typeof val === "string" && val) names.push(slugify(val));
   }
   return names;
 }
