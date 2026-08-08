@@ -913,7 +913,9 @@ def _extract_animations():
     Converts keyframe values from Blender Z-up to Three.js Y-up space.
     Times are converted from frames to seconds using the scene FPS.
 
-    Returns a JSON string with {"type":"animation","animations":[...]}, or None.
+    Returns (header_json, blob_bytes) tuple, or None.
+      - header_json: clip metadata with channel sizes for binary unpacking
+      - blob_bytes:  packed float32 arrays — for each channel: [times…][values…]
     """
     scene = bpy.context.scene
     fps = scene.render.fps / scene.render.fps_base
@@ -958,9 +960,11 @@ def _extract_animations():
                 prop[dp][time_sec][arr_idx] = value
 
     # Convert to wire format
-    clips = []
+    clips_meta = []       # clip metadata for the JSON header
+    all_arrays = []       # float lists to pack into the binary blob
+
     for action_name, objects in actions.items():
-        channels = []
+        channels_meta = []
         for obj_name, props in objects.items():
             for dp, frame_data in props.items():
                 times = sorted(frame_data.keys())
@@ -991,24 +995,34 @@ def _extract_animations():
                     "scale": "scale",
                 }
 
-                channels.append({
+                channels_meta.append({
                     "objectName": obj_name,
                     "property": prop_map[dp],
-                    "times": times,
-                    "values": values,
+                    "timeCount": len(times),
+                    "valueCount": len(values),
                 })
+                all_arrays.append(times)
+                all_arrays.append(values)
 
-        if channels:
-            clips.append({
+        if channels_meta:
+            clips_meta.append({
                 "name": action_name,
                 "fps": fps,
-                "channels": channels,
+                "channels": channels_meta,
             })
 
-    if not clips:
+    if not clips_meta:
         return None
 
-    return json.dumps({"type": "animation", "animations": clips})
+    header = json.dumps({"type": "animation", "clips": clips_meta})
+
+    # Pack all float arrays into a single binary blob
+    flat = []
+    for arr in all_arrays:
+        flat.extend(arr)
+    blob = array.array('f', flat).tobytes() if flat else b''
+
+    return (header, blob)
 
 
 # ---------------------------------------------------------------------------
@@ -1251,26 +1265,31 @@ def _timer():
                     except RuntimeError:
                         pass
 
-                # Keyframe animations — send once per client, re-send only on change
-                animations_json = _extract_animations()
-                if animations_json is not None:
+            # Keyframe animations — send once per client, re-send only on change
+            # (outside if send_cam: — animations are independent of camera sync)
+            anim_result = _extract_animations()
+            if anim_result is not None:
+                anim_header, anim_blob = anim_result
+                with _lock:
+                    cached = _state["animations_cache"]
+                    if cached != anim_header:
+                        _state["animations_cache"] = anim_header
+                        _state["animations_sent"].clear()
+                for ws in current:
+                    ws_id = id(ws)
                     with _lock:
-                        cached = _state["animations_cache"]
-                        if cached != animations_json:
-                            _state["animations_cache"] = animations_json
-                            _state["animations_sent"].clear()
-                    for ws in current:
-                        ws_id = id(ws)
-                        with _lock:
-                            if ws_id in _state["animations_sent"]:
-                                continue
-                            _state["animations_sent"].add(ws_id)
-                        try:
-                            asyncio.run_coroutine_threadsafe(
-                                ws.send(animations_json), loop
-                            )
-                        except RuntimeError:
-                            pass
+                        if ws_id in _state["animations_sent"]:
+                            continue
+                        _state["animations_sent"].add(ws_id)
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            ws.send(anim_header), loop
+                        )
+                        asyncio.run_coroutine_threadsafe(
+                            ws.send(anim_blob), loop
+                        )
+                    except RuntimeError:
+                        pass
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")
