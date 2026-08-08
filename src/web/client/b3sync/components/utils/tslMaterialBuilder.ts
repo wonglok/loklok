@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { vec3, texture as tslTexture, uv as tslUV } from "three/tsl";
 import type { TextureData } from "../types/blenderTypes";
+import { useBlenderStore } from "../stores/blenderStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,10 +41,31 @@ export interface ShaderGraph {
   nodes: BlenderNode[];
 }
 
-/** Material parameters — graph is the sole source of material properties. */
+/** Flat material properties sent by the Blender plugin alongside the shader graph.
+ *  Used as fallback when no graph is available or graph evaluation is partial. */
+export interface FlatMaterialProps {
+  color: [number, number, number];
+  roughness: number;
+  metallic: number;
+  emissiveColor: [number, number, number];
+  emissiveIntensity: number;
+  transparent: boolean;
+  opacity: number;
+  alphaTest: number;
+  flatShading: boolean;
+  texture?: string;
+  roughnessMap?: string;
+  metalnessMap?: string;
+  normalMap?: string;
+  emissiveMap?: string;
+}
+
+/** Material parameters — graph is the primary source, flat props are fallback. */
 export interface TSLMaterialParams {
   graph?: ShaderGraph;
   texData: Map<string, TextureData>;
+  /** Flat material properties from the plugin — fallback when graph is absent or partial. */
+  flat?: FlatMaterialProps;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,28 +73,58 @@ export interface TSLMaterialParams {
 // ---------------------------------------------------------------------------
 
 const _textureCache = new Map<string, THREE.Texture>();
+/** Set of texture names whose images have fully decoded and been uploaded. */
+export const _loadedTextures = new Set<string>();
+/** Names currently being loaded (to avoid duplicate loads). */
+const _loadingTextures = new Set<string>();
 
 function getOrCreateTexture(
   name: string,
   texData: Map<string, TextureData>,
 ): THREE.Texture | null {
+  // Already loaded and cached — return immediately.
   const existing = _textureCache.get(name);
   if (existing) return existing;
 
   const texEntry = texData.get(name);
   if (!texEntry) return null;
 
-  const blob = new File([texEntry.bytes], "image.png", { type: texEntry.mime });
-  const url = URL.createObjectURL(blob);
-  const texture = new THREE.TextureLoader().load(url);
+  // Already loading — don't start a second load; return null until it finishes.
+  if (_loadingTextures.has(name)) return null;
 
+  // Start async image load.
+  _loadingTextures.add(name);
+
+  const blob = new Blob([texEntry.bytes], { type: texEntry.mime });
+  const url = URL.createObjectURL(blob);
+
+  const img = new Image();
+  const texture = new THREE.Texture(img);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.flipY = true;
   texture.colorSpace = THREE.SRGBColorSpace;
 
-  _textureCache.set(name, texture);
-  return texture;
+  img.onload = () => {
+    texture.needsUpdate = true;
+    _textureCache.set(name, texture);
+    _loadedTextures.add(name);
+    _loadingTextures.delete(name);
+    URL.revokeObjectURL(url);
+
+    // Trigger React re-render so materials are rebuilt with the now-loaded texture.
+    useBlenderStore.getState().bumpTextureVersion();
+  };
+  img.onerror = () => {
+    console.warn(`[TSLMaterial] failed to load texture: ${name}`);
+    _loadingTextures.delete(name);
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+
+  // Return null — texture not ready yet. Material will be rebuilt when
+  // bumpTextureVersion() triggers a re-render.
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +448,17 @@ export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
   return [...names];
 }
 
+/** Extract all image texture names referenced in flat material properties. */
+export function getFlatImageNames(flat: FlatMaterialProps | undefined): string[] {
+  if (!flat) return [];
+  const names: string[] = [];
+  for (const key of ["texture", "roughnessMap", "metalnessMap", "normalMap", "emissiveMap"] as const) {
+    const val = flat[key];
+    if (typeof val === "string" && val) names.push(val);
+  }
+  return names;
+}
+
 // ---------------------------------------------------------------------------
 // Main builder — all material properties derived from the shader graph
 // ---------------------------------------------------------------------------
@@ -403,7 +466,7 @@ export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
 export function buildTSLMaterial(
   params: TSLMaterialParams,
 ): THREE.MeshPhysicalNodeMaterial {
-  const { graph, texData } = params;
+  const { graph, texData, flat } = params;
   const mat = new THREE.MeshPhysicalNodeMaterial();
 
   // ---- Evaluate graph ----
@@ -441,8 +504,20 @@ export function buildTSLMaterial(
     } else if (Array.isArray(baseColor) && baseColor.length >= 3) {
       mat.color.setRGB(baseColor[0], baseColor[1], baseColor[2]);
     }
+  } else if (flat) {
+    // Fallback: use flat properties from plugin
+    if (flat.texture) {
+      const tex = getOrCreateTexture(flat.texture, texData);
+      if (tex) {
+        mat.colorNode = tslTexture(tex, tslUV()) as any;
+        mat.color.setRGB(1, 1, 1);
+      } else {
+        mat.color.setRGB(flat.color[0], flat.color[1], flat.color[2]);
+      }
+    } else {
+      mat.color.setRGB(flat.color[0], flat.color[1], flat.color[2]);
+    }
   } else {
-    // Default gray
     mat.color.setRGB(0.5, 0.5, 0.5);
   }
 
@@ -457,6 +532,13 @@ export function buildTSLMaterial(
     if (tex) (mat as any).roughnessNode = tslTexture(tex, tslUV());
   } else if (typeof roughnessInput === "number") {
     mat.roughness = roughnessInput;
+  } else if (flat?.roughnessMap) {
+    // Fallback: roughness map from flat properties
+    const tex = getOrCreateTexture(flat.roughnessMap, texData);
+    if (tex) (mat as any).roughnessNode = tslTexture(tex, tslUV());
+    else mat.roughness = flat.roughness;
+  } else if (flat) {
+    mat.roughness = flat.roughness;
   } else {
     mat.roughness = 0.5;
   }
@@ -472,6 +554,13 @@ export function buildTSLMaterial(
     if (tex) (mat as any).metalnessNode = tslTexture(tex, tslUV());
   } else if (typeof metallicInput === "number") {
     mat.metalness = metallicInput;
+  } else if (flat?.metalnessMap) {
+    // Fallback: metalness map from flat properties
+    const tex = getOrCreateTexture(flat.metalnessMap, texData);
+    if (tex) (mat as any).metalnessNode = tslTexture(tex, tslUV());
+    else mat.metalness = flat.metallic;
+  } else if (flat) {
+    mat.metalness = flat.metallic;
   } else {
     mat.metalness = 0.0;
   }
@@ -482,9 +571,17 @@ export function buildTSLMaterial(
   if (emissionColor?._isTSLTexture) {
     const tex = texFromGraph(emissionColor.imageName);
     if (tex) (mat as any).emissiveNode = tslTexture(tex, tslUV());
+  } else if (!emissionColor && flat?.emissiveMap) {
+    // Fallback: emissive map from flat properties
+    const tex = getOrCreateTexture(flat.emissiveMap, texData);
+    if (tex) (mat as any).emissiveNode = tslTexture(tex, tslUV());
   }
   if (typeof emissionStrength === "number" && emissionStrength > 0) {
     mat.emissiveIntensity = emissionStrength;
+  } else if (!bsdf?.emissionStrength && flat && flat.emissiveIntensity > 0) {
+    // Fallback: emissive from flat properties
+    mat.emissive.setRGB(flat.emissiveColor[0], flat.emissiveColor[1], flat.emissiveColor[2]);
+    mat.emissiveIntensity = flat.emissiveIntensity;
   }
 
   // ---- Alpha / transparency ----
@@ -494,12 +591,25 @@ export function buildTSLMaterial(
       mat.transparent = true;
       mat.opacity = alphaInput;
     }
+  } else if (flat) {
+    // Fallback: transparency from flat properties
+    if (flat.transparent) {
+      mat.transparent = true;
+      mat.opacity = flat.opacity;
+    }
+    if (flat.alphaTest > 0) {
+      mat.alphaTest = flat.alphaTest;
+    }
   }
 
-  // ---- Normal map (from graph Normal input) ----
+  // ---- Normal map (from graph Normal input or flat properties) ----
   const normalInput: any = bsdf?.normal;
   if (normalInput?.type === "normalMap" && typeof normalInput.color === "string") {
     const tex = texFromGraph(normalInput.color);
+    if (tex) mat.normalMap = tex;
+  } else if (!normalInput && flat?.normalMap) {
+    // Fallback: normal map from flat properties
+    const tex = getOrCreateTexture(flat.normalMap, texData);
     if (tex) mat.normalMap = tex;
   }
 
@@ -541,6 +651,11 @@ export function buildTSLMaterial(
     wireMap(bsdf.specularTint, "specularColorNode");
     wireMap(bsdf.anisotropic, "anisotropyNode");
     wireMap(bsdf.transmissionRoughness, "thicknessNode");
+  }
+
+  // ---- Flat shading (from plugin, not part of shader graph) ----
+  if (flat?.flatShading) {
+    mat.flatShading = true;
   }
 
   return mat;

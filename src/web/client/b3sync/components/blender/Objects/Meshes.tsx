@@ -10,7 +10,10 @@ import {
   buildMaterial,
   computeMaterialCacheKey,
 } from "../../utils/meshBuilder";
-import { getGraphImageNames } from "../../utils/tslMaterialBuilder";
+import {
+  getGraphImageNames,
+  getFlatImageNames,
+} from "../../utils/tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +80,7 @@ export function Meshes() {
   const sceneData = useBlenderStore((s) => s.sceneData);
   const texData = useBlenderStore((s) => s.texData);
   const geoBuffers = useBlenderStore((s) => s.geoBuffers);
+  const textureVersion = useBlenderStore((s) => s.textureVersion);
 
   const scene = useThree((r) => r.scene);
   const sceneRef = useRef<THREE.Scene | null>(scene);
@@ -122,12 +126,53 @@ export function Meshes() {
         }
       }
 
+      // Also request textures from flat material properties (fallback maps)
+      const flatImageNames = getFlatImageNames({
+        color: obj.color,
+        roughness: obj.roughness,
+        metallic: obj.metallic,
+        emissiveColor: obj.emissiveColor,
+        emissiveIntensity: obj.emissiveIntensity,
+        transparent: obj.transparent,
+        opacity: obj.opacity,
+        alphaTest: obj.alphaTest,
+        flatShading: obj.flatShading,
+        texture: obj.texture,
+        roughnessMap: obj.roughnessMap,
+        metalnessMap: obj.metalnessMap,
+        normalMap: obj.normalMap,
+        emissiveMap: obj.emissiveMap,
+      });
+      for (const imgName of flatImageNames) {
+        if (!texData.has(imgName) && !_requestedTex.has(imgName)) {
+          _requestedTex.add(imgName);
+          console.log(`[Meshes] requesting tex (flat): ${imgName}`);
+          send({ type: "request-tex", name: imgName });
+        }
+      }
+
       // Skip mesh building if geometry isn't ready
       if (!geoBuf || geoBuf.version !== obj.version) continue;
 
-      // ---- Build material from graph only ----
-      const matKey = computeMaterialCacheKey({ graph: obj.graph, texData });
-      const material = buildMaterial({ graph: obj.graph, texData });
+      // ---- Build material from graph + flat fallback ----
+      const flat = {
+        color: obj.color,
+        roughness: obj.roughness,
+        metallic: obj.metallic,
+        emissiveColor: obj.emissiveColor,
+        emissiveIntensity: obj.emissiveIntensity,
+        transparent: obj.transparent,
+        opacity: obj.opacity,
+        alphaTest: obj.alphaTest,
+        flatShading: obj.flatShading,
+        texture: obj.texture,
+        roughnessMap: obj.roughnessMap,
+        metalnessMap: obj.metalnessMap,
+        normalMap: obj.normalMap,
+        emissiveMap: obj.emissiveMap,
+      };
+      const matKey = computeMaterialCacheKey({ graph: obj.graph, texData, flat });
+      const material = buildMaterial({ graph: obj.graph, texData, flat });
 
       const geoVersion = geoBuf.version;
 
@@ -160,7 +205,7 @@ export function Meshes() {
           cached = undefined;
         }
 
-        const geo = buildGeometry(geoBuf, false);
+        const geo = buildGeometry(geoBuf, !!(obj.normalMap || obj.graph?.nodes?.some(n => n.type === "normal-map")));
         const im = new THREE.InstancedMesh(geo, material, 1);
         im.name = obj.name;
         im.castShadow = true;
@@ -191,7 +236,7 @@ export function Meshes() {
         disposeTransform(name);
       }
     }
-  }, [sceneData, texData, geoBuffers, scene]);
+  }, [sceneData, texData, geoBuffers, textureVersion, scene]);
 
   // ---- Per-frame interpolation ----
   useFrame(() => {

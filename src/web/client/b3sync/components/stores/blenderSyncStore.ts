@@ -96,7 +96,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           useBlenderStore.getState().setHdrData({
             width: pending.width,
             height: pending.height,
-            pixels: event.data,
+            bytes: event.data,
           });
         } else if (pending.kind === "tex") {
           console.log(`[WS] received tex: ${pending.name} (${event.data.byteLength} bytes)`);
@@ -139,7 +139,15 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       try {
         const data = JSON.parse(text);
 
-        if (data.type === "hdr") {
+        if (data.type === "connected") {
+          // Initial handshake from plugin — no action needed.
+          // Binary blobs + scene data follow automatically.
+        } else if (data.type === "blend-file") {
+          // Blend file path sent on connect — log for debugging.
+          // The plugin sends this so the web client can verify it matches
+          // the project's expected source file.
+          console.log(`[WS] blend file: ${data.path}`);
+        } else if (data.type === "hdr") {
           if (data.width > 0 && data.height > 0) {
             set({
               pendingBinary: {
@@ -229,7 +237,27 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           }));
           useBlenderStore.getState().setLights(lights);
         } else if (Array.isArray(data.objects)) {
-          useBlenderStore.getState().setSceneData(data as any);
+          // Normalise scene objects — ensure all flat material props have defaults
+          const objects = (data.objects as any[]).map((obj: any) => ({
+            ...obj,
+            color: obj.color ?? [0.5, 0.5, 0.5],
+            roughness: obj.roughness ?? 0.5,
+            metallic: obj.metallic ?? 0.0,
+            emissiveColor: obj.emissiveColor ?? [0.0, 0.0, 0.0],
+            emissiveIntensity: obj.emissiveIntensity ?? 0.0,
+            transparent: obj.transparent ?? false,
+            opacity: obj.opacity ?? 1.0,
+            alphaTest: obj.alphaTest ?? 0.0,
+            flatShading: obj.flatShading ?? false,
+          }));
+          useBlenderStore.getState().setSceneData({ objects } as any);
+          // Also extract cameras/lights if embedded in the scene payload
+          if (Array.isArray(data.cameras) && data.cameras.length > 0) {
+            useBlenderStore.getState().setCameras(data.cameras as any[]);
+          }
+          if (Array.isArray(data.lights) && data.lights.length > 0) {
+            useBlenderStore.getState().setLights(data.lights as any[]);
+          }
         }
       } catch {
         // Ignore malformed data

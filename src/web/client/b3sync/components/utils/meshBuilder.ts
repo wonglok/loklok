@@ -4,7 +4,9 @@ import type { TextureData } from "../types/blenderTypes";
 import {
   buildTSLMaterial,
   getGraphImageNames,
+  _loadedTextures,
   type ShaderGraph,
+  type FlatMaterialProps,
 } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
@@ -61,24 +63,43 @@ export function buildGeometry(
 // Material builder — graph is the sole source of material properties
 // ---------------------------------------------------------------------------
 
-/** Parameters for {@link buildMaterial}. Graph-derived, no flat properties. */
+/** Parameters for {@link buildMaterial}. Graph-derived with flat fallback. */
 export interface BuildMaterialParams {
   graph?: ShaderGraph;
   texData: Map<string, TextureData>;
+  /** Flat material properties from the plugin — fallback when graph is absent/partial. */
+  flat?: FlatMaterialProps;
 }
 
-/** Compute a cache key from the serialised shader graph + texture availability. */
+/** Compute a cache key from the serialised shader graph + flat props + texture availability.
+ *  Uses _loadedTextures (not raw texData) so the key changes when texture images finish decoding. */
 export function computeMaterialCacheKey(params: BuildMaterialParams): string {
+  const parts: string[] = [];
+
   if (params.graph) {
-    const parts = [JSON.stringify(params.graph)];
-    // Include texture availability so the key changes when textures arrive
+    parts.push(JSON.stringify(params.graph));
+    // Include texture *load* state — key changes once the image decodes
     const imageNames = getGraphImageNames(params.graph);
     for (const name of imageNames.sort()) {
-      parts.push(`${name}:${params.texData.has(name) ? "1" : "0"}`);
+      parts.push(`${name}:${_loadedTextures.has(name) ? "1" : "0"}`);
     }
-    return parts.join("|");
   }
-  return "no-graph";
+
+  if (params.flat) {
+    // Include flat properties + flat texture load state in the cache key
+    const { color, roughness, metallic, emissiveColor, emissiveIntensity,
+            transparent, opacity, alphaTest, flatShading,
+            texture, roughnessMap, metalnessMap, normalMap, emissiveMap } = params.flat;
+    parts.push(JSON.stringify({
+      color, roughness, metallic, emissiveColor, emissiveIntensity,
+      transparent, opacity, alphaTest, flatShading,
+    }));
+    for (const name of [texture, roughnessMap, metalnessMap, normalMap, emissiveMap].filter(Boolean).sort()) {
+      parts.push(`${name}:${_loadedTextures.has(name!) ? "1" : "0"}`);
+    }
+  }
+
+  return parts.length > 0 ? parts.join("|") : "no-graph";
 }
 
 /**
@@ -95,6 +116,7 @@ export function buildMaterial(
   const mat = buildTSLMaterial({
     graph: params.graph,
     texData: params.texData,
+    flat: params.flat,
   });
 
   _materialCache.set(key, mat);

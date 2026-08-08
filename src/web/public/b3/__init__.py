@@ -67,17 +67,19 @@ _state = {
     "error": "",
     "clients": set(),
     "loop": None,
-    "server": None,
+    "server": None,       # the websockets Server handle (for shutdown)
     "thread": None,
     "hdr_cache": None,    # (width, height, pixels_bytes, key) or None
+    "hdr_sent": set(),    # set of ws ids that have already received HDR
     "tex_cache": {},      # image_name → (mime, bytes, key)
-    "geo_cache": {},      # obj_name → (version, vCount, iCount, hasUVs, blob_bytes)
-    "camera_sync_enabled": True,
-    "scene_cams_cache": None,
-    "scene_cams_sent": set(),
-    "lights_cache": None,
-    "lights_sent": set(),
-    "port": 0,
+    "tex_sent": {},       # ws_id → set of image_names already sent
+    "geo_sent": {},       # ws_id → set of "name@version" already sent
+    "camera_sync_enabled": True,  # whether to send camera data to clients
+    "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
+    "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
+    "lights_cache": None,       # serialized lights JSON string (change detection)
+    "lights_sent": set(),       # ws ids that already received current lights payload
+    "port": 0,            # actual port the running server is bound to (0 = none)
 }
 
 
@@ -376,8 +378,95 @@ def get_scene_data():
             for v in face.verts:
                 indices.append(v.index)
 
-        # --- Shader node graph — sole source of material properties ---
-        graph = None
+        # --- Flat shading detection ---
+        # If every face has smooth=False the mesh was explicitly flat-shaded
+        # (Blender's "Shade Flat"). Mixed or all-smooth stays smooth.
+        flat_shading = all(not f.smooth for f in bm.faces) if bm.faces else False
+
+        # --- Material properties (Principled BSDF) ---
+        color = [0.5, 0.5, 0.5]
+        roughness = 0.5
+        metallic = 0.0
+        emissive_color = [0.0, 0.0, 0.0]
+        emissive_strength = 0.0
+        texture = None          # base color map
+        roughness_map = None
+        metalness_map = None
+        normal_map = None
+        emissive_map = None     # emission color map
+        opacity = 1.0
+        transparent = False
+        alpha_test = 0.0
+
+        mat = obj.active_material
+        if mat and mat.use_nodes:
+            for node in mat.node_tree.nodes:
+                if node.type == 'BSDF_PRINCIPLED':
+                    bc = node.inputs.get('Base Color')
+                    if bc:
+                        tex_img = _find_image_texture(bc)
+                        if tex_img:
+                            texture = tex_img.name
+                            color = [1.0, 1.0, 1.0]  # white — texture determines color
+                        else:
+                            color = list(bc.default_value)[:3]
+
+                    rim = _find_image_texture(node.inputs.get('Roughness'))
+                    roughness_map = rim.name if rim else None
+                    mim = _find_image_texture(node.inputs.get('Metallic'))
+                    metalness_map = mim.name if mim else None
+                    nim = _find_image_texture(node.inputs.get('Normal'))
+                    normal_map = nim.name if nim else None
+
+                    r = node.inputs.get('Roughness')
+                    if r and not r.is_linked:
+                        roughness = r.default_value
+                    m = node.inputs.get('Metallic')
+                    if m and not m.is_linked:
+                        metallic = m.default_value
+                    ec = (node.inputs.get('Emission Color')
+                          or node.inputs.get('Emission'))
+                    if ec:
+                        em_tex = _find_image_texture(ec)
+                        if em_tex:
+                            emissive_map = em_tex.name
+                            emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
+                        else:
+                            emissive_color = list(ec.default_value)[:3]
+                    es = node.inputs.get('Emission Strength')
+                    if es:
+                        emissive_strength = es.default_value
+
+                    # Transparency
+                    alpha = node.inputs.get('Alpha')
+                    if alpha and not alpha.is_linked:
+                        opacity = alpha.default_value
+                    break
+
+            # Blend mode (on the material, not the shader node)
+            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
+            if blend_method == 'BLEND':
+                transparent = True
+            elif blend_method == 'HASHED':
+                transparent = True
+            elif blend_method == 'CLIP':
+                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
+
+        elif mat:
+            color = list(mat.diffuse_color)[:3]
+            if hasattr(mat, 'roughness'):
+                roughness = mat.roughness
+            if hasattr(mat, 'metallic'):
+                metallic = mat.metallic
+            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
+            if blend_method == 'BLEND':
+                transparent = True
+            elif blend_method == 'HASHED':
+                transparent = True
+            elif blend_method == 'CLIP':
+                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
+
+        # --- Shader node graph checksum (for realtime graph sync) ---
         graph_hash = "0"
         try:
             graph = _extract_node_graph(obj.active_material)
@@ -386,14 +475,25 @@ def get_scene_data():
                 graph_json = json.dumps(graph, sort_keys=True)
                 graph_hash = hashlib.md5(graph_json.encode()).hexdigest()[:8]
         except Exception:
+            graph = None
             pass
 
-        # Version tag — changes when geometry or shader graph changes
+        # Version tag — changes when geometry, material, OR shader graph changes
         uv_cksum = 0
         if uvs:
             uv_cksum = int(sum(uvs) * 1000)
         version = (
             f"v{len(vertices)}_f{len(indices)}"
+            f"_c{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}"
+            f"_r{roughness:.4f}_m{metallic:.4f}"
+            f"_e{emissive_color[0]:.4f}_{emissive_color[1]:.4f}_{emissive_color[2]:.4f}"
+            f"_es{emissive_strength:.4f}"
+            f"_tx{texture or 'none'}"
+            f"_rm{roughness_map or 'none'}"
+            f"_mm{metalness_map or 'none'}"
+            f"_nm{normal_map or 'none'}"
+            f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
+            f"_fl{'1' if flat_shading else '0'}"
             f"_uv{uv_cksum}"
             f"_gh{graph_hash}"
         )
@@ -421,18 +521,37 @@ def get_scene_data():
         obj.rotation_mode = orig_mode
 
         obj_data = {
-            "name":       obj.name,
-            "position":   [pos.x, pos.z, -pos.y],
-            "quaternion": [q.x,   q.z,   -q.y,   q.w],
-            "scale":      [s.x,   s.z,    s.y],
-            "version":    version,
+            "name":              obj.name,
+            "position":          [pos.x, pos.z, -pos.y],
+            "quaternion":        [q.x,   q.z,   -q.y,   q.w],
+            "scale":             [s.x,   s.z,    s.y],
+            "color":             color,
+            "roughness":         roughness,
+            "metalness":         metallic,
+            "emissiveColor":     emissive_color,
+            "emissiveIntensity": emissive_strength,
+            "transparent":       transparent,
+            "opacity":           opacity,
+            "alphaTest":         alpha_test,
+            "flatShading":       flat_shading,
+            "version":           version,
         }
-
-        # Attach shader node graph — the sole source of material properties
-        if graph:
-            obj_data["graph"] = {"nodes": graph}
+        if texture:
+            obj_data["texture"] = texture
+        if roughness_map:
+            obj_data["roughnessMap"] = roughness_map
+        if metalness_map:
+            obj_data["metalnessMap"] = metalness_map
+        if normal_map:
+            obj_data["normalMap"] = normal_map
+        if emissive_map:
+            obj_data["emissiveMap"] = emissive_map
 
         data["objects"].append(obj_data)
+
+        # --- Attach shader node graph (already extracted above for the hash) ---
+        if graph:
+            obj_data["graph"] = {"nodes": graph}
 
     return json.dumps(data), geometry_dict
 
@@ -522,12 +641,13 @@ def _extract_world_hdr():
 # Material texture extraction (must run on main thread)
 # ---------------------------------------------------------------------------
 def _extract_textures():
-    """Scan all mesh materials for all Image Textures (graph-based approach).
-    Extracts every TEX_IMAGE node image, not just BSDF-connected ones.
-    Caches encoded image bytes in _state["tex_cache"].
+    """Scan all mesh objects for Image Textures connected to Principled BSDF.
+    Sends encoded image bytes (PNG / JPG / WebP) so the web viewer can use
+    THREE.TextureLoader which handles sRGB encoding correctly.
 
     Returns dict of image_name → (mime_type, bytes_data, cache_key)."""
     textures = {}
+    INPUTS = ('Base Color', 'Roughness', 'Metallic', 'Normal', 'Emission Color')
 
     for obj in bpy.context.scene.objects:
         if obj.type != 'MESH':
@@ -536,44 +656,51 @@ def _extract_textures():
         if not mat or not mat.use_nodes:
             continue
 
-        # Scan ALL Image Texture nodes in the material's node tree
         for node in mat.node_tree.nodes:
-            if node.type != 'TEX_IMAGE' or not node.image:
+            if node.type != 'BSDF_PRINCIPLED':
                 continue
+            for input_name in INPUTS:
+                sock = node.inputs.get(input_name)
+                img = _find_image_texture(sock)  # direct bpy Image reference
+                if img is None:
+                    continue
+                name = img.name
+                if name in textures:
+                    continue
 
-            img = node.image
-            name = img.name
-            if name in textures:
-                continue
+                # Get encoded image bytes (PNG / JPG / WebP)
+                img_bytes, mime, ext = _get_image_bytes(img)
+                if img_bytes is None:
+                    print(f"[B3Sync] WARNING: no image data for '{name}'")
+                    continue
 
-            # Get encoded image bytes (PNG / JPG / WebP)
-            img_bytes, mime, ext = _get_image_bytes(img)
-            if img_bytes is None:
-                print(f"[B3Sync] WARNING: no image data for '{name}'")
-                continue
+                w, h = img.size
+                key = f"{name}_{w}x{h}"
 
-            w, h = img.size
-            key = f"{name}_{w}x{h}"
+                # Check cache
+                with _lock:
+                    cached = _state["tex_cache"].get(name)
+                if cached is not None and cached[2] == key:
+                    textures[name] = cached
+                    continue
 
-            # Check cache
-            with _lock:
-                cached = _state["tex_cache"].get(name)
-            if cached is not None and cached[2] == key:
-                textures[name] = cached
-                continue
+                result = (mime, img_bytes, key)
+                textures[name] = result
 
-            result = (mime, img_bytes, key)
-            textures[name] = result
-
-            with _lock:
-                _state["tex_cache"][name] = result
-            print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
+                with _lock:
+                    _state["tex_cache"][name] = result
+                    for ws_set in _state["tex_sent"].values():
+                        ws_set.discard(name)
+                print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
+            break
 
     # Purge stale cache entries
     with _lock:
         for name in list(_state["tex_cache"].keys()):
             if name not in textures:
                 del _state["tex_cache"][name]
+                for ws_set in _state["tex_sent"].values():
+                    ws_set.discard(name)
 
     return textures
 
@@ -770,101 +897,25 @@ def _extract_lights():
     return lights
 
 
-# ---------------------------------------------------------------------------
-# Request handlers — respond to client resource requests
-# ---------------------------------------------------------------------------
-
-def _handle_request_geo(obj_name):
-    """Respond to a geometry request from the main-thread-populated cache."""
-    with _lock:
-        geo_entry = _state["geo_cache"].get(obj_name)
-    if geo_entry is not None:
-        geo_version, v_count, i_count, has_uvs, blob = geo_entry
-        header = json.dumps({
-            "type": "geo",
-            "name": obj_name,
-            "version": geo_version,
-            "vCount": v_count,
-            "iCount": i_count,
-            "hasUVs": has_uvs,
-        })
-        return (header, blob)
-    return None
-
-
-def _handle_request_tex(tex_name):
-    """Respond to a texture request from the main-thread-populated cache."""
-    with _lock:
-        tex_entry = _state["tex_cache"].get(tex_name)
-    if tex_entry is not None:
-        mime, bytes_data, _ = tex_entry
-        header = json.dumps({
-            "type": "tex",
-            "name": tex_name,
-            "mime": mime,
-        })
-        return (header, bytes_data)
-    return None
-
-
-def _handle_request_hdr():
-    """Respond to an HDR request from the main-thread-populated cache."""
-    with _lock:
-        hdr = _state["hdr_cache"]
-    if hdr is not None:
-        w, h, pixels_bytes, _ = hdr
-        header = json.dumps({"type": "hdr", "width": w, "height": h})
-        return (header, pixels_bytes)
-    else:
-        header = json.dumps({"type": "hdr", "width": 0, "height": 0})
-        return (header, None)
-
-
 async def _handler(websocket):
-    """Handle a client connection — responds to resource requests."""
     with _lock:
         _state["clients"].add(websocket)
     print(f"[B3Sync] Client connected ({len(_state['clients'])} total)")
 
+    # Send the .blend file path as the first message so the web client can
+    # verify it matches the project's expected source file.
+    blend_path = bpy.data.filepath
+    if blend_path:
+        try:
+            await websocket.send(json.dumps({
+                "type": "blend-file",
+                "path": blend_path,
+            }))
+        except Exception:
+            pass
+
     try:
-        async for message in websocket:
-            try:
-                data = json.loads(message)
-                msg_type = data.get("type", "")
-
-                if msg_type == "request-geo":
-                    obj_name = data.get("name", "")
-                    print(f"[B3Sync] REQUEST geo: {obj_name}")
-                    result = _handle_request_geo(obj_name)
-                    if result:
-                        header, blob = result
-                        await websocket.send(header)
-                        await websocket.send(blob)
-                        print(f"[B3Sync] SENT geo: {obj_name} ({len(blob)} bytes)")
-
-                elif msg_type == "request-tex":
-                    tex_name = data.get("name", "")
-                    print(f"[B3Sync] REQUEST tex: {tex_name}")
-                    result = _handle_request_tex(tex_name)
-                    if result:
-                        header, blob = result
-                        await websocket.send(header)
-                        await websocket.send(blob)
-                        print(f"[B3Sync] SENT tex: {tex_name} ({len(blob)} bytes)")
-                    else:
-                        print(f"[B3Sync] MISS tex: {tex_name} (not in cache)")
-
-                elif msg_type == "request-hdr":
-                    print(f"[B3Sync] REQUEST hdr")
-                    result = _handle_request_hdr()
-                    if result is not None:
-                        header, blob = result
-                        await websocket.send(header)
-                        if blob:
-                            await websocket.send(blob)
-                        print(f"[B3Sync] SENT hdr ({len(blob) if blob else 0} bytes)")
-            except Exception:
-                pass
+        await websocket.wait_closed()
     except ConnectionClosed:
         pass
     finally:
@@ -934,36 +985,78 @@ def _server_thread(port: int):
 # Timer (fires at ~5 Hz from Blender's main thread)
 # ---------------------------------------------------------------------------
 def _timer():
-    """Blender timer — extracts data on main thread, sends lightweight JSON at ~15 Hz.
-    Binary blobs (geometry, textures, HDR) are cached for on-demand request/response."""
+    """Blender timer — sends scene data and HDR (~5 Hz), keeps panel in sync."""
     try:
         with _lock:
             loop = _state["loop"]
             current = list(_state["clients"])
 
         if loop is not None and not loop.is_closed() and current:
-            # --- Extract scene data + geometry on main thread, cache for requests ---
+            # --- Scene data (JSON text) + geometry blobs (binary) ---
             data_json, geometry_dict = get_scene_data()
-            with _lock:
-                for obj_name, geo_entry in geometry_dict.items():
-                    _state["geo_cache"][obj_name] = geo_entry
 
-            # Send lightweight scene JSON (no blobs)
             for ws in current:
+                ws_id = id(ws)
+
+                # Send geometry blobs FIRST so they arrive before the scene JSON
+                # that references them (WebSocket preserves per-connection ordering)
+                with _lock:
+                    if ws_id not in _state["geo_sent"]:
+                        _state["geo_sent"][ws_id] = set()
+                    geo_sent = _state["geo_sent"][ws_id]
+
+                for obj_name, (geo_version, v_count, i_count, has_uvs, blob) in geometry_dict.items():
+                    key = f"{obj_name}@{geo_version}"
+                    if key in geo_sent:
+                        continue
+                    header = json.dumps({
+                        "type": "geo",
+                        "name": obj_name,
+                        "version": geo_version,
+                        "vCount": v_count,
+                        "iCount": i_count,
+                        "hasUVs": has_uvs,
+                    })
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                        asyncio.run_coroutine_threadsafe(ws.send(blob), loop)
+                    except RuntimeError:
+                        continue
+                    geo_sent.add(key)
+
+                # Then send the lightweight scene JSON (transforms + materials only)
                 try:
                     asyncio.run_coroutine_threadsafe(ws.send(data_json), loop)
                 except RuntimeError:
                     pass
 
-            # --- Extract HDR on main thread, cache for requests ---
+            # --- World HDR (binary blob) — send once per client, no intensity ---
             hdr = _extract_world_hdr()
-            with _lock:
+            for ws in current:
+                ws_id = id(ws)
+                with _lock:
+                    already_sent = ws_id in _state["hdr_sent"]
+                if already_sent:
+                    continue
                 if hdr is not None:
-                    _state["hdr_cache"] = hdr
+                    w, h, pixels_bytes, _ = hdr
+                    header = json.dumps({"type": "hdr", "width": w, "height": h})
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                        asyncio.run_coroutine_threadsafe(ws.send(pixels_bytes), loop)
+                    except RuntimeError:
+                        continue
                 else:
-                    _state["hdr_cache"] = None
+                    # No world HDR — tell client there's nothing
+                    header = json.dumps({"type": "hdr", "width": 0, "height": 0})
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                    except RuntimeError:
+                        continue
+                with _lock:
+                    _state["hdr_sent"].add(ws_id)
 
-            # --- HDR intensity (lightweight JSON, every tick) ---
+            # --- World HDR intensity — send every tick (lightweight JSON) ---
             hdr_intensity_msg = json.dumps({
                 "type": "hdr-intensity",
                 "value": _get_world_intensity(),
@@ -974,13 +1067,34 @@ def _timer():
                 except RuntimeError:
                     continue
 
-            # --- Extract textures on main thread, cache for requests ---
-            _extract_textures()  # populates _state["tex_cache"] internally
+            # --- Material textures (binary) — send once per client per texture ---
+            textures = _extract_textures()
+            for ws in current:
+                ws_id = id(ws)
+                with _lock:
+                    if ws_id not in _state["tex_sent"]:
+                        _state["tex_sent"][ws_id] = set()
+                    sent = _state["tex_sent"][ws_id]
 
-            # --- Camera data (JSON) ---
+                for tex_name, (mime, bytes_data, _) in textures.items():
+                    if tex_name in sent:
+                        continue
+                    header = json.dumps({
+                        "type": "tex", "name": tex_name,
+                        "mime": mime,
+                    })
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
+                        asyncio.run_coroutine_threadsafe(ws.send(bytes_data), loop)
+                    except RuntimeError:
+                        continue
+                    sent.add(tex_name)
+
+            # --- Camera data (JSON) — viewport at 5 Hz, scene cameras on change ---
             with _lock:
                 send_cam = _state["camera_sync_enabled"]
             if send_cam:
+                # Viewport camera — send every frame (~5 Hz), unchanged
                 cam = _extract_viewport()
                 if cam is not None:
                     cam_json = json.dumps(cam)
@@ -990,6 +1104,7 @@ def _timer():
                         except RuntimeError:
                             pass
 
+                # Scene cameras — send once per client, re-send only on change
                 cams_json = json.dumps({
                     "type": "cameras",
                     "cameras": _extract_scene_cameras(),
@@ -1010,34 +1125,36 @@ def _timer():
                     except RuntimeError:
                         pass
 
-            # --- Scene lights ---
-            lights_json = json.dumps({
-                "type": "lights",
-                "lights": _extract_lights(),
-            })
-            with _lock:
-                cached = _state["lights_cache"]
-                if cached != lights_json:
-                    _state["lights_cache"] = lights_json
-                    _state["lights_sent"].clear()
-            for ws in current:
-                ws_id = id(ws)
+                # Scene lights — send once per client, re-send only on change
+                lights_json = json.dumps({
+                    "type": "lights",
+                    "lights": _extract_lights(),
+                })
                 with _lock:
-                    if ws_id in _state["lights_sent"]:
-                        continue
-                    _state["lights_sent"].add(ws_id)
-                try:
-                    asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
-                except RuntimeError:
-                    pass
+                    cached = _state["lights_cache"]
+                    if cached != lights_json:
+                        _state["lights_cache"] = lights_json
+                        _state["lights_sent"].clear()
+                for ws in current:
+                    ws_id = id(ws)
+                    with _lock:
+                        if ws_id in _state["lights_sent"]:
+                            continue
+                        _state["lights_sent"].add(ws_id)
+                    try:
+                        asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
+                    except RuntimeError:
+                        pass
 
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")
         traceback.print_exc()
 
+    # Always tag a redraw so the panel reflects the latest _state,
+    # even when it was changed from the background thread.
     _redraw_all()
-    return 1.0 / 15.0
+    return 1.0 / 5.0
 
 
 

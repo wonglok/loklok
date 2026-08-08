@@ -11,7 +11,30 @@ export interface BlenderObject {
   scale: [number, number, number];
   /** Geometry version — matched against GeoBuffer.version for cache invalidation. */
   version: string;
-  /** Serialised Blender shader node graph — the sole source of material properties. */
+
+  // ---- Flat material properties (always sent by Blender plugin) ----
+  /** Base color (linear sRGB) — used when no shader graph or as graph fallback. */
+  color: [number, number, number];
+  roughness: number;
+  metallic: number;
+  emissiveColor: [number, number, number];
+  emissiveIntensity: number;
+  transparent: boolean;
+  opacity: number;
+  alphaTest: number;
+  flatShading: boolean;
+  /** Image texture name for base color map. */
+  texture?: string;
+  /** Image texture name for roughness map. */
+  roughnessMap?: string;
+  /** Image texture name for metalness map. */
+  metalnessMap?: string;
+  /** Image texture name for normal map. */
+  normalMap?: string;
+  /** Image texture name for emissive map. */
+  emissiveMap?: string;
+
+  /** Serialised Blender shader node graph — the primary source of material properties. */
   graph?: ShaderGraph;
 }
 
@@ -30,8 +53,8 @@ export interface SceneData {
 export interface ImageData {
   width: number;
   height: number;
-  /** Raw float32 RGBA pixel data */
-  pixels: ArrayBuffer;
+  /** Raw HDR file bytes (RGBE-encoded) — decoded by HDRLoader.parse() on the client. */
+  bytes: ArrayBuffer;
 }
 
 /** Encoded image data for material textures (PNG / JPG / WebP). */

@@ -34,6 +34,9 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
+  /** Monotonic counter bumped each time a texture image finishes decoding.
+   *  Components can depend on this to rebuild materials when textures become available. */
+  textureVersion: number;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -47,6 +50,8 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
+  /** Bump the texture version — called when a texture image finishes decoding. */
+  bumpTextureVersion: () => void;
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({
@@ -61,6 +66,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
+  textureVersion: 0,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -92,4 +98,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
+
+  bumpTextureVersion: () =>
+    set((prev) => ({ textureVersion: prev.textureVersion + 1 })),
 }));
