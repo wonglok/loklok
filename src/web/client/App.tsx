@@ -7,11 +7,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Welcome />} />
-      <Route
-        path="/projects/:projectID"
-        element={<SceneSyncEditor></SceneSyncEditor>}
-      ></Route>
-      <Route path="/projects" element={<ProjectsPage />} />
+      <Route path="/preview" element={<SceneSyncEditor />} />
     </Routes>
   );
 }
