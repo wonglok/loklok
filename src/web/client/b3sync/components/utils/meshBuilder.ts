@@ -1,7 +1,11 @@
 import * as THREE from "three/webgpu";
 import type { GeoBuffer } from "../types/blenderTypes";
 import type { TextureData } from "../types/blenderTypes";
-import { buildTSLMaterial, getGraphImageNames, type ShaderGraph } from "./tslMaterialBuilder";
+import {
+  buildTSLMaterial,
+  getGraphImageNames,
+  type ShaderGraph,
+} from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Module-level caches

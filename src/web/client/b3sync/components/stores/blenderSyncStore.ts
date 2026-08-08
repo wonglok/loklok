@@ -92,17 +92,20 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
         if (!pending) return;
 
         if (pending.kind === "hdr") {
+          console.log(`[WS] received hdr: ${pending.width}x${pending.height}`);
           useBlenderStore.getState().setHdrData({
             width: pending.width,
             height: pending.height,
             pixels: event.data,
           });
         } else if (pending.kind === "tex") {
+          console.log(`[WS] received tex: ${pending.name} (${event.data.byteLength} bytes)`);
           useBlenderStore.getState().addTexture(pending.name, {
             mime: pending.mime,
             bytes: event.data,
           });
         } else if (pending.kind === "geo") {
+          console.log(`[WS] received geo: ${pending.name} v${pending.vCount} i${pending.iCount}`);
           // Unpack binary blob with ZERO-COPY typed array views:
           // [float32 vertices][uint32 indices][float32 UVs?]
           // Views keep the underlying ArrayBuffer alive — no data copy.

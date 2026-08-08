@@ -834,27 +834,35 @@ async def _handler(websocket):
 
                 if msg_type == "request-geo":
                     obj_name = data.get("name", "")
+                    print(f"[B3Sync] REQUEST geo: {obj_name}")
                     result = _handle_request_geo(obj_name)
                     if result:
                         header, blob = result
                         await websocket.send(header)
                         await websocket.send(blob)
+                        print(f"[B3Sync] SENT geo: {obj_name} ({len(blob)} bytes)")
 
                 elif msg_type == "request-tex":
                     tex_name = data.get("name", "")
+                    print(f"[B3Sync] REQUEST tex: {tex_name}")
                     result = _handle_request_tex(tex_name)
                     if result:
                         header, blob = result
                         await websocket.send(header)
                         await websocket.send(blob)
+                        print(f"[B3Sync] SENT tex: {tex_name} ({len(blob)} bytes)")
+                    else:
+                        print(f"[B3Sync] MISS tex: {tex_name} (not in cache)")
 
                 elif msg_type == "request-hdr":
+                    print(f"[B3Sync] REQUEST hdr")
                     result = _handle_request_hdr()
                     if result is not None:
                         header, blob = result
                         await websocket.send(header)
                         if blob:
                             await websocket.send(blob)
+                        print(f"[B3Sync] SENT hdr ({len(blob) if blob else 0} bytes)")
             except Exception:
                 pass
     except ConnectionClosed:

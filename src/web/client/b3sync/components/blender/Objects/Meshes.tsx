@@ -65,7 +65,6 @@ const LERP_SMOOTH = 0.15;
 let _ready = false;
 const _mat4 = new THREE.Matrix4();
 
-// Track which requests have been sent to avoid spamming
 const _requestedGeo = new Set<string>();
 const _requestedTex = new Set<string>();
 
@@ -83,8 +82,6 @@ export function Meshes() {
   const sceneRef = useRef<THREE.Scene | null>(scene);
   const meshesRef = useRef<Map<string, CachedMesh>>(new Map());
 
-  const send = useBlenderSyncStore((s) => s.send);
-
   useEffect(() => {
     sceneRef.current = scene;
   }, [scene]);
@@ -93,6 +90,9 @@ export function Meshes() {
   useEffect(() => {
     const sc = sceneRef.current;
     if (!sc) return;
+
+    const { send } = useBlenderSyncStore.getState();
+    if (!send) return;
 
     const meshes = meshesRef.current;
     const incomingNames = new Set<string>();
@@ -108,6 +108,7 @@ export function Meshes() {
         !_requestedGeo.has(obj.name)
       ) {
         _requestedGeo.add(obj.name);
+        console.log(`[Meshes] requesting geo: ${obj.name}`);
         send({ type: "request-geo", name: obj.name });
       }
 
@@ -116,6 +117,7 @@ export function Meshes() {
       for (const imgName of imageNames) {
         if (!texData.has(imgName) && !_requestedTex.has(imgName)) {
           _requestedTex.add(imgName);
+          console.log(`[Meshes] requesting tex: ${imgName}`);
           send({ type: "request-tex", name: imgName });
         }
       }
@@ -189,7 +191,7 @@ export function Meshes() {
         disposeTransform(name);
       }
     }
-  }, [sceneData, texData, geoBuffers, scene, send]);
+  }, [sceneData, texData, geoBuffers, scene]);
 
   // ---- Per-frame interpolation ----
   useFrame(() => {
