@@ -11,22 +11,16 @@ import { useEffect } from "react";
 
 export function SceneSyncEditor() {
   const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
-  const disconnect = useBlenderSyncStore((s) => s.disconnect);
-
-  // Hydrate persisted settings from localStorage on the client (SSR-safe)
-  const hydrate = useSettingsStore((s) => s.hydrate);
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
 
   // Connect WebSocket on mount, disconnect on unmount
   useEffect(() => {
+    const disconnectFn = useBlenderSyncStore.getState().disconnect;
     const connectFn = useBlenderSyncStore.getState().connect;
     connectFn();
     return () => {
-      disconnect();
+      disconnectFn();
     };
-  }, [disconnect]);
+  }, []);
 
   return (
     <div className="w-screen h-screen relative">
