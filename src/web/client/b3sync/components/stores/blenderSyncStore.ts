@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { useBlenderStore } from "./blenderStore";
 import { useSettingsStore } from "./settingsStore";
-import type { CameraData, LightData } from "../types/blenderTypes";
+import type { CameraData, LightData, RigBuffer, AnimClipData, KeyframeTrackData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -17,6 +17,15 @@ type PendingBinary =
       vCount: number;
       iCount: number;
       hasUVs: boolean;
+    }
+  | {
+      kind: "rig";
+      name: string;
+      boneNames: string[];
+      boneParents: number[];
+      boneCount: number;
+      vertexCount: number;
+      clipCount: number;
     };
 
 // ---------------------------------------------------------------------------
@@ -68,6 +77,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
+      setRigData,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -125,6 +135,74 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             indices,
             uvs,
           });
+        } else if (pending.kind === "rig") {
+          // Unpack binary blob:
+          // [invBindMatrices: boneCount*16*float32]
+          // [skinIndices: vertexCount*4*uint16]
+          // [skinWeights: vertexCount*4*float32]
+          // [per-clip animation data...]
+          let offset = 0;
+          const dv = new DataView(event.data);
+
+          const matSize = pending.boneCount * 16 * 4;
+          const invBindMatrices = new Float32Array(
+            event.data, offset, pending.boneCount * 16,
+          );
+          offset += matSize;
+
+          const skinIndices = new Uint16Array(
+            event.data, offset, pending.vertexCount * 4,
+          );
+          offset += pending.vertexCount * 4 * 2;
+
+          const skinWeights = new Float32Array(
+            event.data, offset, pending.vertexCount * 4,
+          );
+          offset += pending.vertexCount * 4 * 4;
+
+          // Animation clips
+          const animClips: AnimClipData[] = [];
+          for (let c = 0; c < pending.clipCount; c++) {
+            const nameLen = dv.getUint32(offset, true); offset += 4;
+            const name = new TextDecoder().decode(
+              new Uint8Array(event.data, offset, nameLen),
+            );
+            offset += nameLen;
+            const duration = dv.getFloat32(offset, true); offset += 4;
+            const trackCount = dv.getUint32(offset, true); offset += 4;
+
+            const tracks: KeyframeTrackData[] = [];
+            for (let t = 0; t < trackCount; t++) {
+              const boneIndex = dv.getUint32(offset, true); offset += 4;
+              const property = dv.getUint8(offset); offset += 1;
+              offset += 3; // padding to align
+              const keyCount = dv.getUint32(offset, true); offset += 4;
+
+              const times = new Float32Array(
+                event.data, offset, keyCount,
+              );
+              offset += keyCount * 4;
+
+              const valueSize = property === 1 ? 4 : 3; // quat=4, pos/scale=3
+              const values = new Float32Array(
+                event.data, offset, keyCount * valueSize,
+              );
+              offset += keyCount * valueSize * 4;
+
+              tracks.push({ boneIndex, property, times, values });
+            }
+
+            animClips.push({ name, duration, tracks });
+          }
+
+          useBlenderStore.getState().setRigData(pending.name, {
+            boneNames: pending.boneNames,
+            boneParents: new Int32Array(pending.boneParents),
+            invBindMatrices,
+            skinIndices,
+            skinWeights,
+            animClips,
+          });
         }
         return;
       }
@@ -170,6 +248,18 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
               vCount: data.vCount as number,
               iCount: data.iCount as number,
               hasUVs: !!data.hasUVs,
+            },
+          });
+        } else if (data.type === "rig") {
+          set({
+            pendingBinary: {
+              kind: "rig",
+              name: data.name as string,
+              boneNames: data.boneNames as string[],
+              boneParents: data.boneParents as number[],
+              boneCount: data.boneCount as number,
+              vertexCount: data.vertexCount as number,
+              clipCount: data.clipCount as number,
             },
           });
         } else if (data.type === "camera") {

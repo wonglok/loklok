@@ -74,6 +74,7 @@ _state = {
     "tex_cache": {},      # image_name → (mime, bytes, key)
     "tex_sent": {},       # ws_id → set of image_names already sent
     "geo_sent": {},       # ws_id → set of "name@version" already sent
+    "rig_sent": {},       # ws_id → set of "name@version" already sent (rig data)
     "camera_sync_enabled": True,  # whether to send camera data to clients
     "scene_cams_cache": None,   # serialized scene-cameras JSON string (change detection)
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
@@ -321,17 +322,20 @@ def _pack_geometry(vertices, indices, uvs):
 # Scene data extraction (Blender Z-up → Three.js Y-up)
 # ---------------------------------------------------------------------------
 def get_scene_data():
-    """Returns (json_string, geometry_dict).
+    """Returns (json_string, geometry_dict, rig_dict).
 
     json_string — per-frame scene data WITHOUT vertices/indices/UVs arrays.
     geometry_dict — {object_name: (version, vCount, iCount, hasUVs, blob_bytes)}
-      for binary geo messages (sent once per client per version)."""
+      for binary geo messages (sent once per client per version).
+    rig_dict — {object_name: (version, header_dict, blob_bytes)}
+      for binary rig messages (skeleton + skin + animation)."""
     import bmesh
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     view_layer = bpy.context.view_layer
     data = {"objects": []}
     geometry_dict = {}
+    rig_dict = {}
 
     for obj in bpy.context.scene.objects:
         if obj.type != 'MESH':
@@ -512,6 +516,12 @@ def get_scene_data():
         bm.free()
         eval_obj.to_mesh_clear()
 
+        # --- Rig data (skeleton + skin + animation) ---
+        rig_result = _extract_rig_data(obj)
+        if rig_result is not None:
+            rig_header, rig_blob = rig_result
+            rig_dict[obj.name] = (version, rig_header, rig_blob)
+
         # --- Transform ---
         orig_mode = obj.rotation_mode
         obj.rotation_mode = 'QUATERNION'
@@ -553,7 +563,7 @@ def get_scene_data():
         if graph:
             obj_data["graph"] = {"nodes": graph}
 
-    return json.dumps(data), geometry_dict
+    return json.dumps(data), geometry_dict, rig_dict
 
 
 # ---------------------------------------------------------------------------
