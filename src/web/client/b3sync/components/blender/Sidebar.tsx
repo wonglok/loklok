@@ -1,13 +1,41 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { FileManager } from "../workspace/FileManager";
+import { AnimationControls } from "../workspace/AnimationControls";
+import {
+  getPlaybackState,
+  setPlaybackState,
+  subscribePlayback,
+  type PlaybackState,
+} from "../blender/AnimationController";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
 // Sidebar — left panel with sync controls and status info
 // ---------------------------------------------------------------------------
+
+function FolderOpenIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" />
+      <path d="M2 6v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2H9.5" />
+      <path d="M2 10h5.5" />
+    </svg>
+  );
+}
 
 const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
   disconnected: { color: "bg-gray-500", label: "Disconnected" },
@@ -116,6 +144,15 @@ export function Sidebar() {
   const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
   const setCameraSyncOn = useSettingsStore((s) => s.setCameraSyncOn);
 
+  const animationGlb = useBlenderStore((s) => s.animationGlb);
+  const [pb, setPb] = useState<PlaybackState>(getPlaybackState());
+  useEffect(() => subscribePlayback(setPb), []);
+
+  const [filesOpen, setFilesOpen] = useState(false);
+
+  const hasAnim = animationGlb !== null;
+  const isPlaying = pb.playing && pb.activeClip !== null;
+
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
 
@@ -138,12 +175,36 @@ export function Sidebar() {
         <span className="text-sm font-semibold tracking-wide text-text-primary flex-1">
           Sync Panel
         </span>
+
+        {hasAnim && (
+          <button
+            onClick={() => setPlaybackState({ playing: !pb.playing })}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all duration-150 ${
+              isPlaying
+                ? "text-accent border border-accent/30 bg-accent-subtle hover:bg-accent-subtle/80"
+                : "text-text-muted border border-border bg-surface-secondary hover:text-accent hover:bg-accent-subtle hover:border-accent/20"
+            }`}
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              {isPlaying ? (
+                <>
+                  <rect x="5" y="4" width="5" height="16" rx="1" />
+                  <rect x="14" y="4" width="5" height="16" rx="1" />
+                </>
+              ) : (
+                <polygon points="6,3 20,12 6,21" />
+              )}
+            </svg>
+            <span className="hidden sm:inline">{isPlaying ? "Pause" : "Play"}</span>
+          </button>
+        )}
       </div>
 
       <div className="p-2">
         {/* Home button */}
         <Link
-          to="/"
+          to="/projects"
           className="
           inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
           text-[10px] font-mono text-text-muted
@@ -168,6 +229,27 @@ export function Sidebar() {
           </svg>
           Back
         </Link>
+      </div>
+
+      <div className="p-2 flex">
+        {/* File manager button */}
+        <button
+          onClick={() => setFilesOpen(true)}
+          className="
+            flex items-center gap-1 px-2 py-1 rounded-md
+            text-[10px] text-text-muted
+            border border-border bg-surface-secondary
+            hover:text-text-secondary hover:bg-surface-tertiary
+            transition-all duration-150
+          "
+          title="Browse project files"
+        >
+          <FolderOpenIcon />
+          Virtual File Manager
+        </button>
+        {filesOpen && (
+          <FileManager open={filesOpen} onClose={() => setFilesOpen(false)} />
+        )}
       </div>
 
       {/* ---- Body ---- */}
@@ -358,6 +440,8 @@ export function Sidebar() {
               No scene cameras
             </div>
           )}
+
+          {isConnected && hasAnim && <AnimationControls />}
 
         </div>
       </div>

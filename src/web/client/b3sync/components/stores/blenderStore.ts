@@ -34,9 +34,8 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
-  /** Monotonic counter bumped each time a texture image finishes decoding.
-   *  Components can depend on this to rebuild materials when textures become available. */
-  textureVersion: number;
+  /** Raw animation GLB binary from Blender — loaded by AnimationController via GLTFLoader. */
+  animationGlb: ArrayBuffer | null;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -50,8 +49,19 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
-  /** Bump the texture version — called when a texture image finishes decoding. */
-  bumpTextureVersion: () => void;
+  /** Store the latest animation GLB blob — AnimationController picks it up. */
+  setAnimationGlb: (data: ArrayBuffer | null) => void;
+
+  /** Bulk-load saved project data — all state set atomically. */
+  loadSaveData: (data: {
+    sceneData: SceneData;
+    hdrData: ImageData | null;
+    hdrIntensity: number;
+    lights: LightData[];
+    cameras: CameraData[];
+    geoBuffers: Map<string, GeoBuffer>;
+    texData: Map<string, TextureData>;
+  }) => void;
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({
@@ -66,7 +76,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
-  textureVersion: 0,
+  animationGlb: null,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -99,6 +109,16 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
 
   setLights: (next) => set({ lights: next }),
 
-  bumpTextureVersion: () =>
-    set((prev) => ({ textureVersion: prev.textureVersion + 1 })),
+  setAnimationGlb: (data) => set({ animationGlb: data }),
+
+  loadSaveData: (data) =>
+    set({
+      sceneData: data.sceneData,
+      hdrData: data.hdrData,
+      hdrIntensity: data.hdrIntensity,
+      lights: data.lights,
+      cameras: data.cameras,
+      geoBuffers: data.geoBuffers,
+      texData: data.texData,
+    }),
 }));

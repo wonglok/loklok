@@ -17,7 +17,8 @@ type PendingBinary =
       vCount: number;
       iCount: number;
       hasUVs: boolean;
-    };
+    }
+  | { kind: "anim-gltf"; size: number };
 
 // ---------------------------------------------------------------------------
 // Blender Sync Store
@@ -41,8 +42,6 @@ interface BlenderSyncStore {
   connect: () => void;
   /** Close the WebSocket and cancel any pending reconnect. */
   disconnect: () => void;
-  /** Send a JSON-serialisable message to the Blender add-on. No-op if not connected. */
-  send: (data: unknown) => void;
 }
 
 export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
@@ -70,6 +69,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
+      setAnimationGlb,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -84,7 +84,9 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
 
     // ---- message ----
     socket.onmessage = (event: MessageEvent) => {
-      // --- Binary: pixel data (HDR, texture, geometry, or animation GLB) ---
+      console.log(JSON.parse(event.data));
+
+      // --- Binary: pixel data (HDR, texture, or geometry) ---
       if (event.data instanceof ArrayBuffer) {
         const pending = get().pendingBinary;
         set({ pendingBinary: null });
@@ -92,20 +94,17 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
         if (!pending) return;
 
         if (pending.kind === "hdr") {
-          console.log(`[WS] received hdr: ${pending.width}x${pending.height}`);
           useBlenderStore.getState().setHdrData({
             width: pending.width,
             height: pending.height,
-            bytes: event.data,
+            pixels: event.data,
           });
         } else if (pending.kind === "tex") {
-          console.log(`[WS] received tex: ${pending.name} (${event.data.byteLength} bytes)`);
           useBlenderStore.getState().addTexture(pending.name, {
             mime: pending.mime,
             bytes: event.data,
           });
         } else if (pending.kind === "geo") {
-          console.log(`[WS] received geo: ${pending.name} v${pending.vCount} i${pending.iCount}`);
           // Unpack binary blob with ZERO-COPY typed array views:
           // [float32 vertices][uint32 indices][float32 UVs?]
           // Views keep the underlying ArrayBuffer alive — no data copy.
@@ -130,6 +129,8 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             indices,
             uvs,
           });
+        } else if (pending.kind === "anim-gltf") {
+          useBlenderStore.getState().setAnimationGlb(event.data);
         }
         return;
       }
@@ -139,15 +140,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       try {
         const data = JSON.parse(text);
 
-        if (data.type === "connected") {
-          // Initial handshake from plugin — no action needed.
-          // Binary blobs + scene data follow automatically.
-        } else if (data.type === "blend-file") {
-          // Blend file path sent on connect — log for debugging.
-          // The plugin sends this so the web client can verify it matches
-          // the project's expected source file.
-          console.log(`[WS] blend file: ${data.path}`);
-        } else if (data.type === "hdr") {
+        if (data.type === "hdr") {
           if (data.width > 0 && data.height > 0) {
             set({
               pendingBinary: {
@@ -236,28 +229,15 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             castShadow: !!l.castShadow,
           }));
           useBlenderStore.getState().setLights(lights);
+        } else if (data.type === "animation-gltf") {
+          set({
+            pendingBinary: {
+              kind: "anim-gltf",
+              size: data.size as number,
+            },
+          });
         } else if (Array.isArray(data.objects)) {
-          // Normalise scene objects — ensure all flat material props have defaults
-          const objects = (data.objects as any[]).map((obj: any) => ({
-            ...obj,
-            color: obj.color ?? [0.5, 0.5, 0.5],
-            roughness: obj.roughness ?? 0.5,
-            metallic: obj.metallic ?? 0.0,
-            emissiveColor: obj.emissiveColor ?? [0.0, 0.0, 0.0],
-            emissiveIntensity: obj.emissiveIntensity ?? 0.0,
-            transparent: obj.transparent ?? false,
-            opacity: obj.opacity ?? 1.0,
-            alphaTest: obj.alphaTest ?? 0.0,
-            flatShading: obj.flatShading ?? false,
-          }));
-          useBlenderStore.getState().setSceneData({ objects } as any);
-          // Also extract cameras/lights if embedded in the scene payload
-          if (Array.isArray(data.cameras) && data.cameras.length > 0) {
-            useBlenderStore.getState().setCameras(data.cameras as any[]);
-          }
-          if (Array.isArray(data.lights) && data.lights.length > 0) {
-            useBlenderStore.getState().setLights(data.lights as any[]);
-          }
+          useBlenderStore.getState().setSceneData(data as any);
         }
       } catch {
         // Ignore malformed data
@@ -279,17 +259,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       useBlenderStore.getState().setConnectionState("error");
       socket.close();
     };
-  },
-
-  // ------------------------------------------------------------------
-  // ------------------------------------------------------------------
-  // Send
-  // ------------------------------------------------------------------
-  send: (data) => {
-    const { ws } = get();
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(data));
-    }
   },
 
   // ------------------------------------------------------------------

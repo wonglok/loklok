@@ -1,12 +1,17 @@
 import { Routes, Route } from "react-router-dom";
 import Welcome from "./pages/Welcome";
-import { SceneSyncEditor } from "./b3sync/app/receiver/page";
+import { ProjectsPage } from "./b3sync/app/projects/page";
+import { SceneSyncEditor } from "./b3sync/app/projects/[projectID]/page";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Welcome />} />
-      <Route path="/receiver" element={<SceneSyncEditor />} />
+      <Route
+        path="/projects/:projectID"
+        element={<SceneSyncEditor></SceneSyncEditor>}
+      ></Route>
+      <Route path="/projects" element={<ProjectsPage />} />
     </Routes>
   );
 }

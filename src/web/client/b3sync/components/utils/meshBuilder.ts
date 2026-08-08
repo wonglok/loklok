@@ -1,40 +1,213 @@
 import * as THREE from "three/webgpu";
-import type { GeoBuffer } from "../types/blenderTypes";
-import type { TextureData } from "../types/blenderTypes";
-import {
-  buildTSLMaterial,
-  getGraphImageNames,
-  _loadedTextures,
-  type ShaderGraph,
-  type FlatMaterialProps,
-} from "./tslMaterialBuilder";
+import type { TextureData, GeoBuffer, BlenderObject } from "../types/blenderTypes";
+import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
-// Module-level caches
+// Module-level caches (shared across Viewer and export utilities)
 // ---------------------------------------------------------------------------
 
-/** Cached geometries, keyed by GeoBuffer version. */
-export const _geometryCache = new Map<string, THREE.BufferGeometry>();
+/** Cached geometries + materials, keyed by `name@version@textureUuid`. */
+export const _geoMaterialCache = new Map<
+  string,
+  { geometry: THREE.BufferGeometry; material: THREE.MeshPhysicalNodeMaterial }
+>();
 
-/** Cached materials, keyed by serialised graph. */
-export const _materialCache = new Map<string, THREE.MeshPhysicalNodeMaterial>();
+/** Three.js Textures built from encoded image data via TextureLoader, keyed by `name:kind`. */
+const _textureCache = new Map<string, THREE.Texture>();
 
-// ---------------------------------------------------------------------------
-// Geometry builder
-// ---------------------------------------------------------------------------
+export type TexKind = "color" | "noncolor";
+
+export function getOrCreateTexture(
+  name: string,
+  texData: Map<string, TextureData>,
+  kind: TexKind,
+): THREE.Texture | null {
+  const cacheKey = `${name}:${kind}`;
+  const existing = _textureCache.get(cacheKey);
+  if (existing) return existing;
+
+  const texEntry = texData.get(name);
+  if (!texEntry) return null;
+
+  // Create a Blob URL from the encoded image bytes so the browser's native
+  // PNG / JPEG / WebP decoder handles the sRGB → linear conversion correctly.
+  const blob = new File([texEntry.bytes], "image.png", { type: texEntry.mime });
+  const url = URL.createObjectURL(blob);
+  const texture = new THREE.TextureLoader().load(url);
+
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.flipY = true;
+  texture.colorSpace =
+    kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+
+  _textureCache.set(cacheKey, texture);
+  return texture;
+}
+
+// export function buildGeometry(
+//   vertices: number[],
+//   indices: number[],
+//   uvs: number[] | null | undefined,
+//   color: [number, number, number],
+//   roughness: number,
+//   metalness: number,
+//   emissiveColor: [number, number, number],
+//   emissiveIntensity: number,
+//   map: THREE.Texture | null,
+//   roughnessMap: THREE.Texture | null,
+//   metalnessMap: THREE.Texture | null,
+//   normalMap: THREE.Texture | null,
+//   transparent?: boolean,
+//   opacity?: number,
+//   alphaTest?: number,
+// ): { geometry: THREE.BufferGeometry; material: THREE.MeshStandardMaterial } {
+//   const geo = new THREE.BufferGeometry();
+
+//   const posArray = new Float32Array(vertices);
+//   geo.setAttribute("position", new THREE.BufferAttribute(posArray, 3));
+//   geo.setIndex(indices);
+
+//   // UVs — must be set before computeTangents so tangents are built from them
+//   if (uvs && uvs.length > 0) {
+//     const uvArray = new Float32Array(uvs);
+//     geo.setAttribute("uv", new THREE.BufferAttribute(uvArray, 2));
+//   }
+
+//   geo.computeVertexNormals();
+
+//   // If a normal map is present, compute tangents for correct lighting
+//   if (normalMap) {
+//     geo.computeTangents();
+//   }
+
+//   const mat = new THREE.MeshStandardMaterial({
+//     color: new THREE.Color(color[0], color[1], color[2]),
+//     roughness,
+//     metalness,
+//     emissive: new THREE.Color(
+//       emissiveColor[0],
+//       emissiveColor[1],
+//       emissiveColor[2],
+//     ),
+//     emissiveIntensity,
+//     map,
+//     roughnessMap,
+//     metalnessMap,
+//     normalMap,
+//     flatShading: false,
+//     transparent: transparent ?? false,
+//     opacity: opacity ?? 1.0,
+//     alphaTest: alphaTest ?? 0.0,
+//   });
+//
+//   return { geometry: geo, material: mat };
+// }
+
+/** Parameters for {@link buildGeometryFromBuffer}. */
+export interface BuildGeometryParams {
+  buf: GeoBuffer;
+  color: [number, number, number];
+  roughness: number;
+  metalness: number;
+  emissiveColor: [number, number, number];
+  emissiveIntensity: number;
+  map: THREE.Texture | null;
+  roughnessMap: THREE.Texture | null;
+  metalnessMap: THREE.Texture | null;
+  normalMap: THREE.Texture | null;
+  emissiveMap?: THREE.Texture | null;
+  transparent?: boolean;
+  opacity?: number;
+  alphaTest?: number;
+  flatShading?: boolean;
+  graph?: ShaderGraph;
+  // Physical material properties
+  transmission?: number;
+  transmissionMap?: THREE.Texture | null;
+  thickness?: number;
+  thicknessMap?: THREE.Texture | null;
+  ior?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  clearcoatMap?: THREE.Texture | null;
+  clearcoatRoughnessMap?: THREE.Texture | null;
+  clearcoatNormalMap?: THREE.Texture | null;
+  sheen?: number;
+  sheenRoughness?: number;
+  sheenColor?: [number, number, number];
+  sheenColorMap?: THREE.Texture | null;
+  sheenRoughnessMap?: THREE.Texture | null;
+  specularIntensity?: number;
+  specularColor?: [number, number, number];
+  specularColorMap?: THREE.Texture | null;
+  specularIntensityMap?: THREE.Texture | null;
+  iridescence?: number;
+  iridescenceMap?: THREE.Texture | null;
+  iridescenceIOR?: number;
+  iridescenceThicknessRange?: [number, number];
+  iridescenceThicknessMap?: THREE.Texture | null;
+  anisotropy?: number;
+  anisotropyMap?: THREE.Texture | null;
+  attenuationDistance?: number;
+  attenuationColor?: [number, number, number];
+}
 
 /**
- * Build a BufferGeometry from a GeoBuffer binary blob.
+ * Build geometry from a pre-transferred binary blob (GeoBuffer).
  * Uses the typed arrays directly — no Float32Array conversion needed.
- * Cached by `buf.version` (which encodes vertex/face/UV counts).
  */
-export function buildGeometry(
-  buf: GeoBuffer,
-  hasNormalMap: boolean,
-): THREE.BufferGeometry {
-  const key = buf.version;
-  const cached = _geometryCache.get(key);
-  if (cached) return cached;
+export function buildGeometryFromBuffer(params: BuildGeometryParams): {
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshPhysicalNodeMaterial;
+} {
+  const {
+    buf,
+    color,
+    roughness,
+    metalness,
+    emissiveColor,
+    emissiveIntensity,
+    map,
+    roughnessMap,
+    metalnessMap,
+    normalMap,
+    emissiveMap,
+    transparent = false,
+    opacity = 1.0,
+    alphaTest = 0.0,
+    flatShading = false,
+    graph,
+    // Physical properties
+    transmission = 0,
+    transmissionMap = null,
+    thickness = 0,
+    thicknessMap = null,
+    ior = 1.5,
+    clearcoat = 0,
+    clearcoatRoughness = 0,
+    clearcoatMap = null,
+    clearcoatRoughnessMap = null,
+    clearcoatNormalMap = null,
+    sheen = 0,
+    sheenRoughness = 0,
+    sheenColor = [1, 1, 1],
+    sheenColorMap = null,
+    sheenRoughnessMap = null,
+    specularIntensity = 0,
+    specularColor = [1, 1, 1],
+    specularColorMap = null,
+    specularIntensityMap = null,
+    iridescence = 0,
+    iridescenceMap = null,
+    iridescenceIOR = 1.3,
+    iridescenceThicknessRange = [100, 400],
+    iridescenceThicknessMap = null,
+    anisotropy = 0,
+    anisotropyMap = null,
+    attenuationDistance = Infinity,
+    attenuationColor = [1, 1, 1],
+  } = params;
 
   const geo = new THREE.BufferGeometry();
 
@@ -51,117 +224,87 @@ export function buildGeometry(
 
   geo.computeVertexNormals();
 
-  if (hasNormalMap) {
+  if (normalMap) {
     geo.computeTangents();
   }
 
-  _geometryCache.set(key, geo);
-  return geo;
-}
-
-// ---------------------------------------------------------------------------
-// Material builder — graph is the sole source of material properties
-// ---------------------------------------------------------------------------
-
-/** Parameters for {@link buildMaterial}. Graph-derived with flat fallback. */
-export interface BuildMaterialParams {
-  graph?: ShaderGraph;
-  texData: Map<string, TextureData>;
-  /** Flat material properties from the plugin — fallback when graph is absent/partial. */
-  flat?: FlatMaterialProps;
-}
-
-/** Compute a cache key from the serialised shader graph + flat props + texture availability.
- *  Uses _loadedTextures (not raw texData) so the key changes when texture images finish decoding. */
-export function computeMaterialCacheKey(params: BuildMaterialParams): string {
-  const parts: string[] = [];
-
-  if (params.graph) {
-    parts.push(JSON.stringify(params.graph));
-    // Include texture *load* state — key changes once the image decodes
-    const imageNames = getGraphImageNames(params.graph);
-    for (const name of imageNames.sort()) {
-      parts.push(`${name}:${_loadedTextures.has(name) ? "1" : "0"}`);
-    }
-  }
-
-  if (params.flat) {
-    // Include flat properties + flat texture load state in the cache key
-    const {
-      color,
-      roughness,
-      metallic,
-      emissiveColor,
-      emissiveIntensity,
-      transparent,
-      opacity,
-      alphaTest,
-      flatShading,
-      texture,
-      roughnessMap,
-      metalnessMap,
-      normalMap,
-      emissiveMap,
-    } = params.flat;
-    parts.push(
-      JSON.stringify({
-        color,
-        roughness,
-        metallic,
-        emissiveColor,
-        emissiveIntensity,
-        transparent,
-        opacity,
-        alphaTest,
-        flatShading,
-      }),
-    );
-    for (const name of [
-      texture,
-      roughnessMap,
-      metalnessMap,
-      normalMap,
-      emissiveMap,
-    ]
-      .filter(Boolean)
-      .sort()) {
-      parts.push(`${name}:${_loadedTextures.has(name!) ? "1" : "0"}`);
-    }
-  }
-
-  return parts.length > 0 ? parts.join("|") : "no-graph";
-}
-
-/**
- * Build a MeshPhysicalNodeMaterial purely from the Blender shader graph.
- * Cached by serialised graph (independent of geometry).
- */
-export function buildMaterial(
-  params: BuildMaterialParams,
-): THREE.MeshPhysicalNodeMaterial {
-  const key = computeMaterialCacheKey(params);
-  const cached = _materialCache.get(key);
-  if (cached) return cached;
-
+  // Build material using the TSL shader graph pipeline
   const mat = buildTSLMaterial({
-    graph: params.graph,
-    texData: params.texData,
-    flat: params.flat,
+    geometry: geo,
+    graph,
+    color,
+    roughness,
+    metalness,
+    emissiveColor,
+    emissiveIntensity,
+    map,
+    roughnessMap,
+    metalnessMap,
+    normalMap,
+    emissiveMap: emissiveMap ?? null,
+    transparent,
+    opacity,
+    alphaTest,
+    flatShading,
+    // Physical properties
+    transmission,
+    transmissionMap,
+    thickness,
+    thicknessMap,
+    ior,
+    clearcoat,
+    clearcoatRoughness,
+    clearcoatMap,
+    clearcoatRoughnessMap,
+    clearcoatNormalMap,
+    sheen,
+    sheenRoughness,
+    sheenColor,
+    sheenColorMap,
+    sheenRoughnessMap,
+    specularIntensity,
+    specularColor,
+    specularColorMap,
+    specularIntensityMap,
+    iridescence,
+    iridescenceMap,
+    iridescenceIOR,
+    iridescenceThicknessRange,
+    iridescenceThicknessMap,
+    anisotropy,
+    anisotropyMap,
+    attenuationDistance,
+    attenuationColor,
   });
 
-  _materialCache.set(key, mat);
-  return mat;
+  return { geometry: geo, material: mat };
 }
 
-/** A managed InstancedMesh group. */
+// ---------------------------------------------------------------------------
+// InstancedMesh helpers
+// ---------------------------------------------------------------------------
+
+/** Build a cache key that uniquely identifies a geometry+material combination.
+ *  Objects sharing the same key can be batched into a single InstancedMesh. */
+export function computeMeshCacheKey(
+  objName: string,
+  objVersion: string,
+  geoVersion: string | undefined,
+  map: THREE.Texture | null,
+  roughnessMap: THREE.Texture | null,
+  metalnessMap: THREE.Texture | null,
+  normalMap: THREE.Texture | null,
+  emissiveMap: THREE.Texture | null,
+): string {
+  return `${objName}@${objVersion}@${map?.uuid ?? "n"}@${metalnessMap?.uuid ?? "n"}@${normalMap?.uuid ?? "n"}@${roughnessMap?.uuid ?? "n"}@${emissiveMap?.uuid ?? "n"}@${geoVersion ?? "n"}`;
+}
+
+/** A managed InstancedMesh group — one draw call for N objects sharing the same geometry+material. */
 export interface InstancedGroupEntry {
   mesh: THREE.InstancedMesh;
+  /** Object names in this instance group (order matches instance index). */
   names: Set<string>;
 }
-
-// ---------------------------------------------------------------------------
-// Matrix helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Compose a world matrix from position / quaternion / scale arrays (Blender convention).
