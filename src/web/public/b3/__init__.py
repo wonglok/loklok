@@ -904,15 +904,19 @@ def _extract_lights():
 # Animation GLB export (must run on main thread)
 # ---------------------------------------------------------------------------
 def _compute_animation_key():
-    """Return a lightweight fingerprint of the current animation state.
+    """Return a lightweight fingerprint of the current animation + skin state.
 
-    Runs fast — just counts objects, actions, and fcurves without exporting.
+    Runs fast — counts objects, actions, fcurves, and geometry stats without
+    exporting.  Includes vertex / face counts for skinned meshes so geometry
+    edits also trigger a re-export.
     Returns None if there are no animated / skinned objects."""
     scene = bpy.context.scene
+    depsgraph = bpy.context.evaluated_depsgraph_get()
     parts = []
 
     for obj in scene.objects:
         if obj.type == 'MESH':
+            is_skinned = False
             has_anim = False
             ad = getattr(obj, "animation_data", None)
             if ad is not None:
@@ -928,10 +932,24 @@ def _compute_animation_key():
                 if mod.type == 'ARMATURE' and mod.object:
                     parts.append(f"m:{obj.name}:arm:{mod.object.name}")
                     has_anim = True
+                    is_skinned = True
                     break
             # Also catch parent armature
             if not has_anim and obj.parent and obj.parent.type == 'ARMATURE':
                 parts.append(f"m:{obj.name}:parent:{obj.parent.name}")
+                is_skinned = True
+
+            # Include geometry stats for skinned meshes so edits trigger re-export
+            if is_skinned:
+                try:
+                    eval_obj = obj.evaluated_get(depsgraph)
+                    mesh = eval_obj.to_mesh()
+                    n_verts = len(mesh.vertices)
+                    n_faces = len(mesh.polygons)
+                    parts.append(f"m:{obj.name}:geo:{n_verts}v:{n_faces}f")
+                    eval_obj.to_mesh_clear()
+                except Exception:
+                    pass
 
         elif obj.type == 'ARMATURE':
             ad = getattr(obj, "animation_data", None)
