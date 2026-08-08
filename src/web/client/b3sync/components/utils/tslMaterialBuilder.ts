@@ -420,43 +420,71 @@ function _setStandardProperties(
   mat: THREE.MeshPhysicalNodeMaterial,
   params: TSLMaterialParams,
 ): void {
-  mat.color.setRGB(params.color[0], params.color[1], params.color[2]);
+  // ---- Scalar properties (still valid alongside TSL nodes) ----
   mat.roughness = params.roughness;
   mat.metalness = params.metalness;
   if (params.emissiveIntensity > 0) {
-    // Bake intensity into emissive color so the TSL `emissive` builtin
-    // (used by BloomNode) captures the full emissive contribution.
-    const ei = params.emissiveIntensity;
-    // mat.emissive.setRGB(
-    //   params.emissiveColor[0] * ei,
-    //   params.emissiveColor[1] * ei,
-    //   params.emissiveColor[2] * ei,
-    // );
-    mat.emissiveIntensity = 1.0 * ei;
+    mat.emissiveIntensity = params.emissiveIntensity;
   }
-  mat.emissiveMap = params.emissiveMap;
-  mat.map = params.map;
-  mat.roughnessMap = params.roughnessMap;
-  mat.metalnessMap = params.metalnessMap;
-  mat.normalMap = params.normalMap;
   mat.transparent = params.transparent;
   if (params.opacity < 1.0) mat.opacity = params.opacity;
   if (params.alphaTest > 0) mat.alphaTest = params.alphaTest;
   mat.flatShading = params.flatShading;
 
-  // Physical material properties
+  // ---- TSL texture nodes ----
+  // Base color
+  if (params.map) {
+    mat.colorNode = tslTexture(params.map, tslUV()) as any;
+    mat.color.setRGB(1, 1, 1);
+  } else {
+    mat.color.setRGB(params.color[0], params.color[1], params.color[2]);
+  }
+
+  // Roughness
+  if (params.roughnessMap) {
+    (mat as any).roughnessNode = tslTexture(params.roughnessMap, tslUV());
+  }
+
+  // Metallic
+  if (params.metalnessMap) {
+    (mat as any).metalnessNode = tslTexture(params.metalnessMap, tslUV());
+  }
+
+  // Normal — keep as legacy (normal-map TSL wiring is handled separately)
+  if (params.normalMap) mat.normalMap = params.normalMap;
+
+  // Emission
+  if (params.emissiveMap) {
+    (mat as any).emissiveNode = tslTexture(params.emissiveMap, tslUV());
+  }
+
+  // ---- Physical material properties (scalars + TSL nodes) ----
   mat.transmission = params.transmission;
-  if (params.transmissionMap) mat.transmissionMap = params.transmissionMap;
+  if (params.transmissionMap) {
+    (mat as any).transmissionNode = tslTexture(params.transmissionMap, tslUV());
+  }
+
   mat.thickness = params.thickness;
-  if (params.thicknessMap) mat.thicknessMap = params.thicknessMap;
+  if (params.thicknessMap) {
+    (mat as any).thicknessNode = tslTexture(params.thicknessMap, tslUV());
+  }
+
   mat.ior = params.ior;
   mat.clearcoat = params.clearcoat;
   mat.clearcoatRoughness = params.clearcoatRoughness;
-  if (params.clearcoatMap) mat.clearcoatMap = params.clearcoatMap;
-  if (params.clearcoatRoughnessMap)
-    mat.clearcoatRoughnessMap = params.clearcoatRoughnessMap;
-  if (params.clearcoatNormalMap)
+  if (params.clearcoatMap) {
+    (mat as any).clearcoatNode = tslTexture(params.clearcoatMap, tslUV());
+  }
+  if (params.clearcoatRoughnessMap) {
+    (mat as any).clearcoatRoughnessNode = tslTexture(
+      params.clearcoatRoughnessMap,
+      tslUV(),
+    );
+  }
+  if (params.clearcoatNormalMap) {
     mat.clearcoatNormalMap = params.clearcoatNormalMap;
+  }
+
   mat.sheen = params.sheen;
   mat.sheenRoughness = params.sheenRoughness;
   mat.sheenColor.setRGB(
@@ -464,26 +492,53 @@ function _setStandardProperties(
     params.sheenColor[1],
     params.sheenColor[2],
   );
-  if (params.sheenColorMap) mat.sheenColorMap = params.sheenColorMap;
-  if (params.sheenRoughnessMap)
-    mat.sheenRoughnessMap = params.sheenRoughnessMap;
+  if (params.sheenColorMap) {
+    (mat as any).sheenColorNode = tslTexture(params.sheenColorMap, tslUV());
+  }
+  if (params.sheenRoughnessMap) {
+    (mat as any).sheenRoughnessNode = tslTexture(
+      params.sheenRoughnessMap,
+      tslUV(),
+    );
+  }
+
   mat.specularIntensity = params.specularIntensity;
   mat.specularColor.setRGB(
     params.specularColor[0],
     params.specularColor[1],
     params.specularColor[2],
   );
-  if (params.specularColorMap) mat.specularColorMap = params.specularColorMap;
-  if (params.specularIntensityMap)
-    mat.specularIntensityMap = params.specularIntensityMap;
+  if (params.specularColorMap) {
+    (mat as any).specularColorNode = tslTexture(
+      params.specularColorMap,
+      tslUV(),
+    );
+  }
+  if (params.specularIntensityMap) {
+    (mat as any).specularIntensityNode = tslTexture(
+      params.specularIntensityMap,
+      tslUV(),
+    );
+  }
+
   mat.iridescence = params.iridescence;
-  if (params.iridescenceMap) mat.iridescenceMap = params.iridescenceMap;
+  if (params.iridescenceMap) {
+    (mat as any).iridescenceNode = tslTexture(params.iridescenceMap, tslUV());
+  }
   mat.iridescenceIOR = params.iridescenceIOR;
   mat.iridescenceThicknessRange = params.iridescenceThicknessRange;
-  if (params.iridescenceThicknessMap)
-    mat.iridescenceThicknessMap = params.iridescenceThicknessMap;
+  if (params.iridescenceThicknessMap) {
+    (mat as any).iridescenceThicknessNode = tslTexture(
+      params.iridescenceThicknessMap,
+      tslUV(),
+    );
+  }
+
   mat.anisotropy = params.anisotropy;
-  if (params.anisotropyMap) mat.anisotropyMap = params.anisotropyMap;
+  if (params.anisotropyMap) {
+    (mat as any).anisotropyNode = tslTexture(params.anisotropyMap, tslUV());
+  }
+
   mat.attenuationDistance = params.attenuationDistance;
   mat.attenuationColor.setRGB(
     params.attenuationColor[0],
@@ -547,7 +602,7 @@ export function buildTSLMaterial(
             marker.constantColor[2],
           );
         } else {
-          mat.map = marker.texture;
+          mat.colorNode = tslTexture(marker.texture, tslUV()) as any;
           mat.color.setRGB(1, 1, 1);
         }
       } else if (baseColor._isTSLTexture && params.map) {
@@ -641,16 +696,10 @@ export function buildTSLMaterial(
   }
 
   // ------------------------------------------------------------------
-  // No graph — standard MeshPhysicalNodeMaterial
+  // No graph — TSL node-based MeshPhysicalNodeMaterial
   // ------------------------------------------------------------------
   const mat = new THREE.MeshPhysicalNodeMaterial();
   _setStandardProperties(mat, params);
-  // When a base color texture is present, set color to white so the
-  // texture shows through un-darkened (Blender colour-picker is ignored
-  // when an Image Texture is connected to Base Color).
-  if (params.map) {
-    mat.color.setRGB(1, 1, 1);
-  }
   return mat;
 }
 
