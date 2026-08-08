@@ -479,11 +479,7 @@ export function SyncViewer() {
             obj.quaternion[2],
             obj.quaternion[3],
           ),
-          scale: new THREE.Vector3(
-            obj.scale[0],
-            obj.scale[1],
-            obj.scale[2],
-          ),
+          scale: new THREE.Vector3(obj.scale[0], obj.scale[1], obj.scale[2]),
         });
       }
     }
