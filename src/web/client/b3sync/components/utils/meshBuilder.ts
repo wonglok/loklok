@@ -1,5 +1,10 @@
 import * as THREE from "three/webgpu";
-import type { TextureData, GeoBuffer, BlenderObject } from "../types/blenderTypes";
+import type {
+  TextureData,
+  GeoBuffer,
+  RigBuffer,
+  BlenderObject,
+} from "../types/blenderTypes";
 import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
@@ -320,4 +325,167 @@ export function composeMatrix(
     new THREE.Quaternion(quat[0], quat[1], quat[2], quat[3]),
     new THREE.Vector3(scl[0], scl[1], scl[2]),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Skinned mesh builder
+// ---------------------------------------------------------------------------
+
+/** Build a SkinnedMesh from geometry + rig buffers. */
+export function buildSkinnedGeometryFromBuffer(
+  params: BuildGeometryParams,
+  rig: RigBuffer,
+): {
+  skinnedMesh: THREE.SkinnedMesh;
+  animClips: THREE.AnimationClip[];
+} {
+  const { buf } = params;
+
+  // ---------- Geometry ----------
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(buf.vertices, 3));
+  geo.setIndex(new THREE.BufferAttribute(buf.indices, 1));
+  if (buf.uvs && buf.uvs.length > 0) {
+    geo.setAttribute("uv", new THREE.BufferAttribute(buf.uvs, 2));
+  }
+
+  // Skin attributes — uint16 indices × 4, float32 weights × 4
+  geo.setAttribute(
+    "skinIndex",
+    new THREE.BufferAttribute(rig.skinIndices, 4),
+  );
+  geo.setAttribute(
+    "skinWeight",
+    new THREE.BufferAttribute(rig.skinWeights, 4),
+  );
+
+  geo.computeVertexNormals();
+  if (params.normalMap) {
+    geo.computeTangents();
+  }
+
+  // ---------- Bones ----------
+  const bones: THREE.Bone[] = [];
+  for (let i = 0; i < rig.boneNames.length; i++) {
+    const bone = new THREE.Bone();
+    bone.name = rig.boneNames[i];
+    // Set inverse bind matrix from the flat 16-float matrix
+    bone.matrixAutoUpdate = false;
+    const m = new THREE.Matrix4();
+    m.fromArray(rig.invBindMatrices, i * 16);
+    // Invert: the stored matrix is inverse bind, but Bone uses
+    // matrixWorld * boneInverses internally. We set the matrixWorld
+    // to identity and let the skeleton handle binding.
+    bone.updateMatrixWorld();
+    bones.push(bone);
+  }
+
+  // Set up parent hierarchy
+  for (let i = 0; i < rig.boneParents.length; i++) {
+    const parentIdx = rig.boneParents[i];
+    if (parentIdx >= 0 && parentIdx < bones.length) {
+      bones[parentIdx].add(bones[i]);
+    }
+  }
+
+  // Calculate initial bone matrices from inverse bind
+  const boneInverses: THREE.Matrix4[] = [];
+  for (let i = 0; i < rig.boneNames.length; i++) {
+    const m = new THREE.Matrix4();
+    m.fromArray(rig.invBindMatrices, i * 16);
+    boneInverses.push(m);
+  }
+
+  const skeleton = new THREE.Skeleton(bones, boneInverses);
+
+  // ---------- Material ----------
+  const material = buildTSLMaterial({
+    geometry: geo,
+    graph: params.graph,
+    color: params.color,
+    roughness: params.roughness,
+    metalness: params.metalness,
+    emissiveColor: params.emissiveColor,
+    emissiveIntensity: params.emissiveIntensity,
+    map: params.map,
+    roughnessMap: params.roughnessMap,
+    metalnessMap: params.metalnessMap,
+    normalMap: params.normalMap,
+    emissiveMap: params.emissiveMap ?? null,
+    transparent: params.transparent ?? false,
+    opacity: params.opacity ?? 1.0,
+    alphaTest: params.alphaTest ?? 0.0,
+    flatShading: params.flatShading ?? false,
+    // Physical properties
+    transmission: params.transmission ?? 0,
+    transmissionMap: params.transmissionMap ?? null,
+    thickness: params.thickness ?? 0,
+    thicknessMap: params.thicknessMap ?? null,
+    ior: params.ior ?? 1.5,
+    clearcoat: params.clearcoat ?? 0,
+    clearcoatRoughness: params.clearcoatRoughness ?? 0,
+    clearcoatMap: params.clearcoatMap ?? null,
+    clearcoatRoughnessMap: params.clearcoatRoughnessMap ?? null,
+    clearcoatNormalMap: params.clearcoatNormalMap ?? null,
+    sheen: params.sheen ?? 0,
+    sheenRoughness: params.sheenRoughness ?? 0,
+    sheenColor: params.sheenColor ?? [1, 1, 1],
+    sheenColorMap: params.sheenColorMap ?? null,
+    sheenRoughnessMap: params.sheenRoughnessMap ?? null,
+    specularIntensity: params.specularIntensity ?? 0,
+    specularColor: params.specularColor ?? [1, 1, 1],
+    specularColorMap: params.specularColorMap ?? null,
+    specularIntensityMap: params.specularIntensityMap ?? null,
+    iridescence: params.iridescence ?? 0,
+    iridescenceMap: params.iridescenceMap ?? null,
+    iridescenceIOR: params.iridescenceIOR ?? 1.3,
+    iridescenceThicknessRange: params.iridescenceThicknessRange ?? [100, 400],
+    iridescenceThicknessMap: params.iridescenceThicknessMap ?? null,
+    anisotropy: params.anisotropy ?? 0,
+    anisotropyMap: params.anisotropyMap ?? null,
+    attenuationDistance: params.attenuationDistance ?? Infinity,
+    attenuationColor: params.attenuationColor ?? [1, 1, 1],
+  });
+
+  // ---------- SkinnedMesh ----------
+  const skinnedMesh = new THREE.SkinnedMesh(geo, material);
+  skinnedMesh.bind(skeleton);
+  skinnedMesh.castShadow = true;
+  skinnedMesh.receiveShadow = true;
+
+  // ---------- Animation Clips ----------
+  const animClips: THREE.AnimationClip[] = [];
+  for (const clipData of rig.animClips) {
+    const tracks: THREE.KeyframeTrack[] = [];
+    for (const t of clipData.tracks) {
+      const boneName = rig.boneNames[t.boneIndex];
+      let propPath: string;
+      switch (t.property) {
+        case 0:
+          propPath = ".position";
+          break;
+        case 1:
+          propPath = ".quaternion";
+          break;
+        case 2:
+          propPath = ".scale";
+          break;
+        default:
+          continue;
+      }
+      const trackName = `.bones[${boneName}]${propPath}`;
+      const kft = new THREE.KeyframeTrack(
+        trackName,
+        t.times as any,
+        t.values as any,
+      );
+      tracks.push(kft);
+    }
+    if (tracks.length > 0) {
+      const clip = new THREE.AnimationClip(clipData.name, clipData.duration, tracks);
+      animClips.push(clip);
+    }
+  }
+
+  return { skinnedMesh, animClips };
 }

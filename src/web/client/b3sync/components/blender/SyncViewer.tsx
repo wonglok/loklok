@@ -2,12 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
-import { useThree } from "@react-three/fiber";
+import { useThree, useFrame } from "@react-three/fiber";
 import { useBlenderStore } from "../stores/blenderStore";
 import {
   _geoMaterialCache,
   getOrCreateTexture,
   buildGeometryFromBuffer,
+  buildSkinnedGeometryFromBuffer,
   computeMeshCacheKey,
   composeMatrix,
   type InstancedGroupEntry,
@@ -46,6 +47,7 @@ export function SyncViewer() {
   const hdrIntensity = useBlenderStore((s) => s.hdrIntensity);
   const texData = useBlenderStore((s) => s.texData);
   const geoBuffers = useBlenderStore((s) => s.geoBuffers);
+  const rigBuffers = useBlenderStore((s) => s.rigBuffers);
   const lights = useBlenderStore((s) => s.lights);
 
   const scene = useThree((r) => r.scene);
@@ -54,6 +56,10 @@ export function SyncViewer() {
   const instancedRef = useRef<Map<string, InstancedGroupEntry>>(new Map());
   const instanceSlotsRef = useRef<Map<string, InstanceSlot>>(new Map());
   const lightsRef = useRef<THREE.Light[]>([]);
+
+  // Animation mixer state
+  const mixerRef = useRef<Map<string, THREE.AnimationMixer>>(new Map());
+  const clipRef = useRef<Map<string, THREE.AnimationClip[]>>(new Map());
 
   const gl = useThree((r) => r.gl);
 
@@ -220,7 +226,7 @@ export function SyncViewer() {
         ? getOrCreateTexture(obj.emissiveMap, texData, "color")
         : null;
 
-      const cacheKey = computeMeshCacheKey(
+      let cacheKey = computeMeshCacheKey(
         obj.name,
         obj.version,
         geoBuf?.version,
@@ -230,6 +236,10 @@ export function SyncViewer() {
         normalMap,
         emissiveMap,
       );
+      // Rigged objects get unique keys — never instanced
+      if (rigBuffers.has(obj.name)) {
+        cacheKey = `${cacheKey}_rig_${obj.name}`;
+      }
 
       resolved.push({
         obj,
@@ -359,18 +369,29 @@ export function SyncViewer() {
           slots.delete(obj.name);
         }
 
+        const rig = rigBuffers.get(obj.name);
+        // Exclude rigged objects from instanced batching (each needs its own skeleton)
+        const isRigged = rig !== undefined;
+
         let cached = meshes.get(obj.name);
 
         if (!cached || cached.version !== cacheKey) {
           if (cached) {
             scene.remove(cached.mesh);
+            // Clean up mixer
+            const oldMixer = mixerRef.current.get(obj.name);
+            if (oldMixer) {
+              oldMixer.stopAllAction();
+              mixerRef.current.delete(obj.name);
+            }
+            clipRef.current.delete(obj.name);
             cached = undefined;
           }
 
           if (geoBuf && geoBuf.version === obj.version) {
-            let geoMat = _geoMaterialCache.get(cacheKey);
-            if (!geoMat) {
-              geoMat = buildGeometryFromBuffer({
+            if (isRigged) {
+              // ---- SkinnedMesh path ----
+              const result = buildSkinnedGeometryFromBuffer({
                 buf: geoBuf,
                 color: obj.color,
                 roughness: obj.roughness ?? 0.5,
@@ -387,21 +408,63 @@ export function SyncViewer() {
                 alphaTest: obj.alphaTest,
                 flatShading: obj.flatShading,
                 graph: obj.graph,
-              }) as any;
-              _geoMaterialCache.set(cacheKey, geoMat as any);
+              }, rig);
+
+              const { skinnedMesh, animClips } = result;
+              skinnedMesh.name = obj.name;
+              scene.add(skinnedMesh);
+
+              // Set up animation mixer
+              if (animClips.length > 0) {
+                const mixer = new THREE.AnimationMixer(skinnedMesh);
+                for (const clip of animClips) {
+                  const action = mixer.clipAction(clip);
+                  action.setLoop(THREE.LoopRepeat, Infinity);
+                  action.play();
+                }
+                mixerRef.current.set(obj.name, mixer);
+                clipRef.current.set(obj.name, animClips);
+              }
+
+              cached = { mesh: skinnedMesh, version: cacheKey };
+              meshes.set(obj.name, cached);
+            } else {
+              // ---- Regular Mesh path ----
+              let geoMat = _geoMaterialCache.get(cacheKey);
+              if (!geoMat) {
+                geoMat = buildGeometryFromBuffer({
+                  buf: geoBuf,
+                  color: obj.color,
+                  roughness: obj.roughness ?? 0.5,
+                  metalness: obj.metalness ?? 0.0,
+                  emissiveColor: obj.emissiveColor ?? [0, 0, 0],
+                  emissiveIntensity: obj.emissiveIntensity ?? 0.0,
+                  map,
+                  roughnessMap,
+                  metalnessMap,
+                  normalMap,
+                  emissiveMap,
+                  transparent: obj.transparent,
+                  opacity: obj.opacity,
+                  alphaTest: obj.alphaTest,
+                  flatShading: obj.flatShading,
+                  graph: obj.graph,
+                }) as any;
+                _geoMaterialCache.set(cacheKey, geoMat as any);
+              }
+
+              const mesh = new THREE.Mesh(
+                (geoMat as any).geometry,
+                (geoMat as any).material,
+              );
+              mesh.name = obj.name;
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              scene.add(mesh);
+
+              cached = { mesh, version: cacheKey };
+              meshes.set(obj.name, cached);
             }
-
-            const mesh = new THREE.Mesh(
-              (geoMat as any).geometry,
-              (geoMat as any).material,
-            );
-            mesh.name = obj.name;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-
-            cached = { mesh, version: cacheKey };
-            meshes.set(obj.name, cached);
           }
         }
 
@@ -423,11 +486,17 @@ export function SyncViewer() {
     }
 
     // ---- Phase 3: cleanup ----
-    // Remove stale regular meshes
+    // Remove stale regular meshes (and their mixers)
     for (const [name, entry] of meshes) {
       if (!incomingNames.has(name)) {
         scene.remove(entry.mesh);
         meshes.delete(name);
+        const oldMixer = mixerRef.current.get(name);
+        if (oldMixer) {
+          oldMixer.stopAllAction();
+          mixerRef.current.delete(name);
+        }
+        clipRef.current.delete(name);
       }
     }
 
@@ -446,7 +515,17 @@ export function SyncViewer() {
         slots.delete(name);
       }
     }
-  }, [sceneData, texData, geoBuffers]);
+  }, [sceneData, texData, geoBuffers, rigBuffers]);
+
+  // ------------------------------------------------------------------
+  // Animation mixer update — tick all mixers each frame
+  // ------------------------------------------------------------------
+  useFrame((_, delta) => {
+    const mixers = mixerRef.current;
+    for (const [, mixer] of mixers) {
+      mixer.update(delta);
+    }
+  });
 
   return (
     <group>

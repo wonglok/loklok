@@ -907,6 +907,252 @@ def _extract_lights():
     return lights
 
 
+# ---------------------------------------------------------------------------
+# Rig data extraction (armature → skeleton + skin + animation)
+# ---------------------------------------------------------------------------
+def _extract_rig_data(obj):
+    """Extract skeleton, skin weights, and baked animation for a rigged mesh.
+
+    Returns (header_dict, binary_blob) or None if the object has no armature
+    modifier or no associated armature with bones.
+    """
+    # Find armature modifier
+    arm_mod = None
+    for m in obj.modifiers:
+        if m.type == 'ARMATURE' and m.object is not None:
+            arm_mod = m
+            break
+    if arm_mod is None:
+        return None
+
+    armature = arm_mod.object
+    if armature.type != 'ARMATURE' or len(armature.data.bones) == 0:
+        return None
+
+    bones = armature.data.bones
+    bone_count = len(bones)
+
+    # Build name → index mapping
+    bone_name_to_idx = {b.name: i for i, b in enumerate(bones)}
+
+    # --- Bone hierarchy ---
+    bone_names = []
+    bone_parents = []
+    for b in bones:
+        bone_names.append(b.name)
+        if b.parent:
+            bone_parents.append(bone_name_to_idx.get(b.parent.name, -1))
+        else:
+            bone_parents.append(-1)
+
+    # --- Inverse bind matrices (Three.js Y-up) ---
+    # C = Rx(-90°): [x, z, -y] for Blender Z-up → Three.js Y-up
+    C = mathutils.Matrix.Rotation(-math.pi / 2, 4, 'X')
+    inv_bind = []
+    for b in bones:
+        # bone.matrix_local is the bind pose matrix (world → bone space)
+        # We want the inverse: bone space → world
+        m = C @ b.matrix_local.inverted() @ C.inverted()
+        # Flatten column-major (Three.js convention)
+        for col in range(4):
+            for row in range(4):
+                inv_bind.append(m[row][col])
+
+    # --- Skin weights ---
+    # Get the source mesh vertex data (not evaluated — we need original vertex groups)
+    # We must get per-vertex bone indices and weights.
+    # Using the object's vertex_groups → armature bone name mapping.
+    vg_name_to_bone_idx = {}
+    for vg in obj.vertex_groups:
+        if vg.name in bone_name_to_idx:
+            vg_name_to_bone_idx[vg.index] = bone_name_to_idx[vg.name]
+
+    # Read vertex weights from the original mesh data
+    # For each vertex, collect up to 4 (boneIndex, weight) pairs
+    mesh_data = obj.data
+    vertex_count = len(mesh_data.vertices)
+
+    # Gather per-vertex (group, weight) pairs
+    per_vertex_groups = [[] for _ in range(vertex_count)]
+    for v in mesh_data.vertices:
+        for g in v.groups:
+            if g.group in vg_name_to_bone_idx and g.weight > 0:
+                per_vertex_groups[v.index].append(
+                    (vg_name_to_bone_idx[g.group], g.weight)
+                )
+
+    skin_indices = []
+    skin_weights = []
+    for vgroups in per_vertex_groups:
+        # Sort by weight descending, take top 4
+        vgroups.sort(key=lambda x: x[1], reverse=True)
+        top4 = vgroups[:4]
+        # Normalize to sum to 1
+        total = sum(w for _, w in top4) or 1.0
+        for i in range(4):
+            if i < len(top4):
+                skin_indices.append(top4[i][0])
+                skin_weights.append(top4[i][1] / total)
+            else:
+                skin_indices.append(0)
+                skin_weights.append(0.0)
+
+    # --- Animation clips ---
+    anim_clips = []
+    if armature.animation_data and armature.animation_data.action:
+        action = armature.animation_data.action
+        anim_clips.append(
+            _bake_action(action, bone_name_to_idx, C, armature)
+        )
+    # Also check NLA tracks
+    if armature.animation_data and armature.animation_data.nla_tracks:
+        for nla_track in armature.animation_data.nla_tracks:
+            for strip in nla_track.strips:
+                if strip.action:
+                    anim_clips.append(
+                        _bake_action(strip.action, bone_name_to_idx, C, armature)
+                    )
+
+    clip_count = len(anim_clips)
+
+    # --- Pack binary ---
+    import struct
+    parts = []
+
+    # Inverse bind matrices: boneCount * 16 * float32
+    parts.append(array.array('f', inv_bind).tobytes())
+
+    # Skin indices: vertexCount * 4 * uint16
+    parts.append(array.array('H', skin_indices).tobytes())
+
+    # Skin weights: vertexCount * 4 * float32
+    parts.append(array.array('f', skin_weights).tobytes())
+
+    # Per-clip animation data
+    for clip in anim_clips:
+        name_bytes = clip["name"].encode('utf-8')
+        parts.append(struct.pack('<I', len(name_bytes)))
+        parts.append(name_bytes)
+        parts.append(struct.pack('<f', clip["duration"]))
+        parts.append(struct.pack('<I', len(clip["tracks"])))
+        for track in clip["tracks"]:
+            parts.append(struct.pack('<I', track["boneIndex"]))
+            parts.append(struct.pack('<B', track["property"]))
+            parts.append(b'\x00' * 3)  # padding
+            parts.append(struct.pack('<I', len(track["times"])))
+            parts.append(array.array('f', track["times"]).tobytes())
+            parts.append(array.array('f', track["values"]).tobytes())
+
+    blob = b''.join(parts)
+
+    header = {
+        "type": "rig",
+        "name": obj.name,
+        "boneNames": bone_names,
+        "boneParents": bone_parents,
+        "boneCount": bone_count,
+        "vertexCount": vertex_count,
+        "clipCount": clip_count,
+    }
+
+    return header, blob
+
+
+def _bake_action(action, bone_name_to_idx, C, armature_obj):
+    """Bake a Blender Action into per-bone keyframe tracks (Three.js Y-up).
+
+    Returns a dict with name, duration, and track list.
+    Each track has: boneIndex, property (0=pos,1=quat,2=scale), times, values.
+    """
+    # Collect all keyframe times across all fcurves
+    all_times = set()
+    for fcurve in action.fcurves:
+        for kp in fcurve.keyframe_points:
+            all_times.add(kp.co[0])  # co = (frame, value)
+
+    if not all_times:
+        return {"name": action.name, "duration": 0, "tracks": []}
+
+    sorted_times = sorted(all_times)
+    fps = bpy.context.scene.render.fps
+    frame_start = sorted_times[0]
+    duration = (sorted_times[-1] - frame_start) / fps
+
+    # Collect per-bone samples
+    bone_samples = {name: [] for name in bone_name_to_idx}
+
+    for frame in sorted_times:
+        bpy.context.scene.frame_set(int(frame), subframe=frame - int(frame))
+        time_sec = (frame - frame_start) / fps
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_arm = armature_obj.evaluated_get(depsgraph)
+
+        for bone_name in bone_name_to_idx:
+            if bone_name not in eval_arm.pose.bones:
+                continue
+            pose_bone = eval_arm.pose.bones[bone_name]
+
+            # pose_bone.matrix_basis is the local transform from rest pose
+            mat = C @ pose_bone.matrix_basis @ C.inverted()
+            pos = mat.translation
+            quat = mat.to_quaternion()
+            scl = mat.to_scale()
+
+            bone_samples[bone_name].append({
+                "time": time_sec,
+                "pos": (pos.x, pos.y, pos.z),
+                "quat": (quat.x, quat.y, quat.z, quat.w),
+                "scl": (scl.x, scl.y, scl.z),
+            })
+
+    # Build tracks
+    tracks = []
+    for bone_name, samples in bone_samples.items():
+        if not samples or len(samples) < 2:
+            continue
+        bone_idx = bone_name_to_idx[bone_name]
+
+        # Position track
+        times = [s["time"] for s in samples]
+        pos_values = []
+        for s in samples:
+            pos_values.extend(s["pos"])
+        tracks.append({
+            "boneIndex": bone_idx,
+            "property": 0,
+            "times": times,
+            "values": pos_values,
+        })
+
+        # Quaternion track
+        quat_values = []
+        for s in samples:
+            quat_values.extend(s["quat"])
+        tracks.append({
+            "boneIndex": bone_idx,
+            "property": 1,
+            "times": times,
+            "values": quat_values,
+        })
+
+        # Scale track
+        scl_values = []
+        for s in samples:
+            scl_values.extend(s["scl"])
+        tracks.append({
+            "boneIndex": bone_idx,
+            "property": 2,
+            "times": times,
+            "values": scl_values,
+        })
+
+    return {
+        "name": action.name,
+        "duration": duration,
+        "tracks": tracks,
+    }
+
+
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
@@ -920,6 +1166,7 @@ async def _handler(websocket):
             _state["clients"].discard(websocket)
             ws_id = id(websocket)
             _state["geo_sent"].pop(ws_id, None)
+            _state["rig_sent"].pop(ws_id, None)
             _state["tex_sent"].pop(ws_id, None)
             _state["hdr_sent"].discard(ws_id)
             _state["scene_cams_sent"].discard(ws_id)
@@ -990,7 +1237,7 @@ def _timer():
 
         if loop is not None and not loop.is_closed() and current:
             # --- Scene data (JSON text) + geometry blobs (binary) ---
-            data_json, geometry_dict = get_scene_data()
+            data_json, geometry_dict, rig_dict = get_scene_data()
 
             for ws in current:
                 ws_id = id(ws)
@@ -1020,6 +1267,25 @@ def _timer():
                     except RuntimeError:
                         continue
                     geo_sent.add(key)
+
+                # Send rig blobs (skeleton + skin + animation) — same pattern as geo
+                with _lock:
+                    if ws_id not in _state["rig_sent"]:
+                        _state["rig_sent"][ws_id] = set()
+                    rig_sent = _state["rig_sent"][ws_id]
+
+                for obj_name, (rig_version, rig_header, rig_blob) in rig_dict.items():
+                    key = f"{obj_name}@{rig_version}"
+                    if key in rig_sent:
+                        continue
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            ws.send(json.dumps(rig_header)), loop
+                        )
+                        asyncio.run_coroutine_threadsafe(ws.send(rig_blob), loop)
+                    except RuntimeError:
+                        continue
+                    rig_sent.add(key)
 
                 # Then send the lightweight scene JSON (transforms + materials only)
                 try:
