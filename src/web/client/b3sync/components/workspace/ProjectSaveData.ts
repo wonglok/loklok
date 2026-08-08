@@ -5,6 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import type {
+  AnimationClipData,
   BlenderObject,
   CameraData,
   GeoBuffer,
@@ -26,6 +27,8 @@ export interface ProjectSaveData {
   objects: BlenderObject[];
   lights: LightData[];
   cameras: CameraData[];
+  /** Keyframe animation clips (empty = no animation data). */
+  animations: AnimationClipData[];
 
   /** HDR env-map dimensions (null = no HDR). */
   hdrWidth: number | null;
@@ -42,6 +45,7 @@ export interface LoadedProjectData {
   hdrIntensity: number;
   geoBuffers: Map<string, GeoBuffer>;
   texData: Map<string, TextureData>;
+  animations: AnimationClipData[];
 }
 
 /** Per-geometry metadata stored in the manifest (needed for unpacking binary blobs). */

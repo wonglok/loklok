@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { useBlenderStore } from "./blenderStore";
 import { useSettingsStore } from "./settingsStore";
-import type { CameraData, LightData } from "../types/blenderTypes";
+import type { CameraData, LightData, AnimationClipData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -68,6 +68,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
+      setAnimations,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -222,6 +223,23 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             castShadow: !!l.castShadow,
           }));
           useBlenderStore.getState().setLights(lights);
+        } else if (data.type === "animation") {
+          const raw = (
+            Array.isArray(data.animations) ? data.animations : []
+          ) as any[];
+          const animations: AnimationClipData[] = raw.map((a) => ({
+            name: a.name as string,
+            fps: a.fps as number,
+            channels: (Array.isArray(a.channels) ? a.channels : []).map(
+              (ch: any) => ({
+                objectName: ch.objectName as string,
+                property: ch.property as "position" | "quaternion" | "scale",
+                times: ch.times as number[],
+                values: ch.values as number[],
+              }),
+            ),
+          }));
+          useBlenderStore.getState().setAnimations(animations);
         } else if (Array.isArray(data.objects)) {
           useBlenderStore.getState().setSceneData(data as any);
         }

@@ -116,6 +116,33 @@ export interface LightData {
   castShadow?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Keyframe animation types
+// ---------------------------------------------------------------------------
+
+/** Property path for a keyframe track — maps to Three.js object properties. */
+export type AnimProperty = "position" | "quaternion" | "scale";
+
+/** A single animation channel: one property of one object, with keyframe arrays
+ *  in a format ready for THREE.KeyframeTrack construction.
+ *
+ *  times  — array of time values in seconds
+ *  values — flat array of values (3 floats per keyframe for position/scale,
+ *           4 floats per keyframe for quaternion) */
+export interface AnimationChannel {
+  objectName: string;
+  property: AnimProperty;
+  times: number[];
+  values: number[];
+}
+
+/** A named animation clip with channels and timing metadata. */
+export interface AnimationClipData {
+  name: string;
+  fps: number;
+  channels: AnimationChannel[];
+}
+
 export type ConnectionState =
   | "disconnected"
   | "connecting"

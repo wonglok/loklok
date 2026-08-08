@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { FileManager } from "../workspace/FileManager";
+import { AnimationControls } from "../workspace/AnimationControls";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
@@ -402,6 +403,9 @@ export function Sidebar() {
               No scene cameras
             </div>
           )}
+
+          {/* Keyframe animation controls */}
+          {isConnected && <AnimationControls />}
         </div>
       </div>
 

@@ -115,6 +115,7 @@ export async function saveProject(
     hdrIntensity,
     geoBuffers,
     texData,
+    animations,
   } = store;
 
   // Remove previous latest-version so we write a fresh one
@@ -187,6 +188,7 @@ export async function saveProject(
     objects: sceneData.objects,
     lights,
     cameras,
+    animations,
     hdrWidth: hdrData?.width ?? null,
     hdrHeight: hdrData?.height ?? null,
     hdrIntensity,
@@ -290,12 +292,13 @@ export async function loadProject(
 
   return {
     sceneData: { objects: saveData.objects },
-    lights: saveData.lights,
-    cameras: saveData.cameras,
+    lights: saveData.lights ?? [],
+    cameras: saveData.cameras ?? [],
     hdrData,
-    hdrIntensity: saveData.hdrIntensity,
+    hdrIntensity: saveData.hdrIntensity ?? 1.0,
     geoBuffers,
     texData,
+    animations: saveData.animations ?? [],
   };
 }
 

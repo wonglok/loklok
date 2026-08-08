@@ -79,6 +79,8 @@ _state = {
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
     "lights_cache": None,       # serialized lights JSON string (change detection)
     "lights_sent": set(),       # ws ids that already received current lights payload
+    "animations_cache": None,   # serialized animation clips JSON string (change detection)
+    "animations_sent": set(),   # ws ids that already received current animations payload
     "port": 0,            # actual port the running server is bound to (0 = none)
 }
 
@@ -901,6 +903,117 @@ def _extract_lights():
 # ---------------------------------------------------------------------------
 # WebSocket handler
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Keyframe animation extraction (must run on main thread)
+# ---------------------------------------------------------------------------
+def _extract_animations():
+    """Extract keyframe animation data from all objects with actions.
+
+    Groups FCurves by action name, then by (object name, property).
+    Converts keyframe values from Blender Z-up to Three.js Y-up space.
+    Times are converted from frames to seconds using the scene FPS.
+
+    Returns a JSON string with {"type":"animation","animations":[...]}, or None.
+    """
+    scene = bpy.context.scene
+    fps = scene.render.fps / scene.render.fps_base
+
+    # action_name -> {object_name: {prop: {time_sec: [component_values]}}}
+    actions = {}
+
+    for obj in scene.objects:
+        ad = getattr(obj, "animation_data", None)
+        if ad is None or ad.action is None:
+            continue
+
+        action = ad.action
+        action_name = action.name
+        obj_name = obj.name
+
+        if action_name not in actions:
+            actions[action_name] = {}
+        if obj_name not in actions[action_name]:
+            actions[action_name][obj_name] = {}
+
+        for fcurve in action.fcurves:
+            dp = fcurve.data_path
+
+            # Only handle transform properties
+            if dp not in ("location", "rotation_quaternion", "scale"):
+                continue
+
+            arr_idx = fcurve.array_index  # 0=x, 1=y, 2=z, (3=w for quat)
+            comp_count = 4 if dp == "rotation_quaternion" else 3
+
+            prop = actions[action_name][obj_name]
+            if dp not in prop:
+                prop[dp] = {}
+
+            for kp in fcurve.keyframe_points:
+                time_sec = kp.co[0] / fps
+                value = kp.co[1]
+
+                if time_sec not in prop[dp]:
+                    prop[dp][time_sec] = [0.0] * comp_count
+                prop[dp][time_sec][arr_idx] = value
+
+    # Convert to wire format
+    clips = []
+    for action_name, objects in actions.items():
+        channels = []
+        for obj_name, props in objects.items():
+            for dp, frame_data in props.items():
+                times = sorted(frame_data.keys())
+                raw_values = [frame_data[t] for t in times]
+
+                # Blender Z-up -> Three.js Y-up
+                if dp == "location":
+                    # (x, y, z) -> (x, z, -y)
+                    values = []
+                    for v in raw_values:
+                        values.extend([v[0], v[2], -v[1]])
+                elif dp == "rotation_quaternion":
+                    # Blender (w, x, y, z) -> Three.js (x, z, -y, w)
+                    values = []
+                    for v in raw_values:
+                        values.extend([v[1], v[3], -v[2], v[0]])
+                elif dp == "scale":
+                    # (x, y, z) -> (x, z, y)
+                    values = []
+                    for v in raw_values:
+                        values.extend([v[0], v[2], v[1]])
+                else:
+                    continue
+
+                prop_map = {
+                    "location": "position",
+                    "rotation_quaternion": "quaternion",
+                    "scale": "scale",
+                }
+
+                channels.append({
+                    "objectName": obj_name,
+                    "property": prop_map[dp],
+                    "times": times,
+                    "values": values,
+                })
+
+        if channels:
+            clips.append({
+                "name": action_name,
+                "fps": fps,
+                "channels": channels,
+            })
+
+    if not clips:
+        return None
+
+    return json.dumps({"type": "animation", "animations": clips})
+
+
+# ---------------------------------------------------------------------------
+# WebSocket handler
+# ---------------------------------------------------------------------------
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
@@ -917,6 +1030,8 @@ async def _handler(websocket):
             _state["tex_sent"].pop(ws_id, None)
             _state["hdr_sent"].discard(ws_id)
             _state["scene_cams_sent"].discard(ws_id)
+            _state["animations_sent"].discard(ws_id)
+            _state["lights_sent"].discard(ws_id)
         print(f"[B3Sync] Client disconnected ({len(_state['clients'])} total)")
 
 
@@ -1135,6 +1250,27 @@ def _timer():
                         asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
                     except RuntimeError:
                         pass
+
+                # Keyframe animations — send once per client, re-send only on change
+                animations_json = _extract_animations()
+                if animations_json is not None:
+                    with _lock:
+                        cached = _state["animations_cache"]
+                        if cached != animations_json:
+                            _state["animations_cache"] = animations_json
+                            _state["animations_sent"].clear()
+                    for ws in current:
+                        ws_id = id(ws)
+                        with _lock:
+                            if ws_id in _state["animations_sent"]:
+                                continue
+                            _state["animations_sent"].add(ws_id)
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                ws.send(animations_json), loop
+                            )
+                        except RuntimeError:
+                            pass
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")

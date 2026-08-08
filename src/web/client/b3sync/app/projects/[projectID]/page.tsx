@@ -4,6 +4,7 @@ import { CameraSync } from "../../../components/blender/CameraSync";
 import { CanvasGPU } from "../../../components/blender/CanvasGPU";
 import { Sidebar } from "../../../components/blender/Sidebar";
 import { SyncViewer } from "../../../components/blender/SyncViewer";
+import { AnimationController } from "../../../components/blender/AnimationController";
 import { useBlenderSyncStore } from "../../../components/stores/blenderSyncStore";
 import { useBlenderStore } from "../../../components/stores/blenderStore";
 import { useSettingsStore } from "../../../components/stores/settingsStore";
@@ -108,6 +109,7 @@ export function SceneSyncEditor() {
         <Sidebar />
         <CanvasGPU>
           <SyncViewer />
+          <AnimationController />
           <CameraSync />
 
           {!cameraSyncOn && <OrbitControls target={[0, 1, 0]} makeDefault />}
