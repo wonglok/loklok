@@ -1,6 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import Welcome from "./pages/Welcome";
-import { SceneSyncEditor } from "./pages/SceneSyncEditor";
+import { SceneSyncEditor } from "./b3sync/components/entry-code/SceneSyncEditor";
 
 export default function App() {
   return (
