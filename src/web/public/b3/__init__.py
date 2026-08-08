@@ -1154,7 +1154,7 @@ def _timer():
     # Always tag a redraw so the panel reflects the latest _state,
     # even when it was changed from the background thread.
     _redraw_all()
-    return 1.0 / 5.0
+    return 1.0 / 15.0
 
 
 
