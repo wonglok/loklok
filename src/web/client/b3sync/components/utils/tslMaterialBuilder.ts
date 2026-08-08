@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { vec3, texture as tslTexture, uv as tslUV } from "three/tsl";
-import type { GeoBuffer } from "../types/blenderTypes";
+import type { TextureData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -9,9 +9,7 @@ import type { GeoBuffer } from "../types/blenderTypes";
 /** A single input socket on a Blender shader node. */
 interface BlenderSocket {
   name: string;
-  /** Value when the socket is not connected (may be number, array, string). */
   value?: unknown;
-  /** Connected node ID + output socket name. */
   fromNode?: string;
   fromSocket?: string;
 }
@@ -19,12 +17,12 @@ interface BlenderSocket {
 /** A single color stop in a Blender Color Ramp. */
 interface ColorStop {
   position: number;
-  color: [number, number, number, number]; // RGBA
+  color: [number, number, number, number];
 }
 
 /** Serialised Color Ramp data from a VALTORGB node. */
 interface ColorRampData {
-  interpolation: string; // 'LINEAR' | 'CONSTANT' | 'EASE'
+  interpolation: string;
   stops: ColorStop[];
 }
 
@@ -33,7 +31,6 @@ interface BlenderNode {
   id: string;
   type: string;
   label: string;
-  /** Color Ramp data — present on VALTORGB nodes. */
   colorRamp?: ColorRampData;
   inputs: BlenderSocket[];
 }
@@ -43,60 +40,45 @@ export interface ShaderGraph {
   nodes: BlenderNode[];
 }
 
-/** Material parameters extracted from the shader graph. */
+/** Material parameters — graph is the sole source of material properties. */
 export interface TSLMaterialParams {
-  geometry: THREE.BufferGeometry;
   graph?: ShaderGraph;
-  color: [number, number, number];
-  roughness: number;
-  metalness: number;
-  emissiveColor: [number, number, number];
-  emissiveIntensity: number;
-  map: THREE.Texture | null;
-  roughnessMap: THREE.Texture | null;
-  metalnessMap: THREE.Texture | null;
-  normalMap: THREE.Texture | null;
-  emissiveMap: THREE.Texture | null;
-  transparent: boolean;
-  opacity: number;
-  alphaTest: number;
-  flatShading: boolean;
-  // Physical material properties
-  transmission: number;
-  transmissionMap: THREE.Texture | null;
-  thickness: number;
-  thicknessMap: THREE.Texture | null;
-  ior: number;
-  clearcoat: number;
-  clearcoatRoughness: number;
-  clearcoatMap: THREE.Texture | null;
-  clearcoatRoughnessMap: THREE.Texture | null;
-  clearcoatNormalMap: THREE.Texture | null;
-  sheen: number;
-  sheenRoughness: number;
-  sheenColor: [number, number, number];
-  sheenColorMap: THREE.Texture | null;
-  sheenRoughnessMap: THREE.Texture | null;
-  specularIntensity: number;
-  specularColor: [number, number, number];
-  specularColorMap: THREE.Texture | null;
-  specularIntensityMap: THREE.Texture | null;
-  iridescence: number;
-  iridescenceMap: THREE.Texture | null;
-  iridescenceIOR: number;
-  iridescenceThicknessRange: [number, number];
-  iridescenceThicknessMap: THREE.Texture | null;
-  anisotropy: number;
-  anisotropyMap: THREE.Texture | null;
-  attenuationDistance: number;
-  attenuationColor: [number, number, number];
+  texData: Map<string, TextureData>;
+}
+
+// ---------------------------------------------------------------------------
+// Texture cache — resolves Blender image names → Three.js Textures
+// ---------------------------------------------------------------------------
+
+const _textureCache = new Map<string, THREE.Texture>();
+
+function getOrCreateTexture(
+  name: string,
+  texData: Map<string, TextureData>,
+): THREE.Texture | null {
+  const existing = _textureCache.get(name);
+  if (existing) return existing;
+
+  const texEntry = texData.get(name);
+  if (!texEntry) return null;
+
+  const blob = new File([texEntry.bytes], "image.png", { type: texEntry.mime });
+  const url = URL.createObjectURL(blob);
+  const texture = new THREE.TextureLoader().load(url);
+
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.flipY = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  _textureCache.set(name, texture);
+  return texture;
 }
 
 // ---------------------------------------------------------------------------
 // Color Ramp — canvas-based gradient texture
 // ---------------------------------------------------------------------------
 
-/** Cached gradient textures keyed by a hash of the stop data. */
 const _rampTextureCache = new Map<string, THREE.CanvasTexture>();
 
 function generateColorRampTexture(
@@ -168,7 +150,6 @@ function evaluateColorRampAt(
   return last.color.slice(0, 3) as [number, number, number];
 }
 
-/** Marker returned by VALTORGB evaluation to signal a ramp texture override. */
 interface RampTextureMarker {
   __rampTexture: true;
   texture: THREE.CanvasTexture;
@@ -179,36 +160,24 @@ interface RampTextureMarker {
 // Recursive shader graph evaluator
 // ---------------------------------------------------------------------------
 
-/** Union of possible results from a single node evaluation. */
 type EvalResult = unknown;
 
-/**
- * Recursively evaluate one Blender shader node by walking upstream connections.
- *
- * Each node resolves its inputs by recursing into connected nodes — a true
- * recursive tree loop with automatic cycle detection via the `visited` set.
- */
 function evaluateNode(
   graph: ShaderGraph,
   visited: Set<string>,
   nodeId: string,
 ): EvalResult {
-  // Cycle guard — a node referencing itself (or a cycle) returns undefined.
   if (visited.has(nodeId)) return undefined;
   visited.add(nodeId);
-
-  // console.log(graph);
 
   const node = graph.nodes.find((n) => n.id === nodeId);
   if (!node) return undefined;
 
-  // Resolve an input socket: if connected → recurse; otherwise → default value.
   const getInput = (socketName: string): EvalResult => {
     const sock = node.inputs.find((s) => s.name === socketName);
     if (!sock) return undefined;
     if (sock.fromNode) {
       const up = evaluateNode(graph, new Set(visited), sock.fromNode);
-      // Multi-output upstream (SEPXYZ) — pick the named socket.
       if (
         up &&
         typeof up === "object" &&
@@ -223,15 +192,10 @@ function evaluateNode(
     return sock.value as EvalResult;
   };
 
-  // ------------------------------------------------------------------
-  // Per-node-type dispatching (recursive descent)
-  // ------------------------------------------------------------------
   switch (node.type) {
-    // -- Terminal: follow the Surface link ----------------------------
     case "output-material":
       return getInput("surface");
 
-    // -- Principled BSDF — collect top-level material parameters ------
     case "bsdf-principled":
       return {
         baseColor: getInput("base-color"),
@@ -241,7 +205,6 @@ function evaluateNode(
         emissionStrength: getInput("emission-strength"),
         alpha: getInput("alpha"),
         normal: getInput("normal"),
-        // Physical properties
         transmission: getInput("transmission"),
         transmissionRoughness: getInput("transmission-roughness"),
         ior: getInput("ior"),
@@ -256,11 +219,9 @@ function evaluateNode(
         anisotropicRotation: getInput("anisotropic-rotation"),
       };
 
-    // -- Image Texture — return a TSL marker with UV awareness ---------
     case "tex-image": {
       const imageName = getInput("image") as string | undefined;
       const vecInput = getInput("vector");
-      // Check if Vector is connected to a Texture Coordinate / UV Map node
       const useTexCoord =
         vecInput &&
         typeof vecInput === "object" &&
@@ -272,14 +233,12 @@ function evaluateNode(
       };
     }
 
-    // -- Normal Map ---------------------------------------------------
     case "normal-map": {
       const strength = (getInput("strength") as number) ?? 1.0;
       const color = getInput("color") as string | undefined;
       return { type: "normalMap", strength, color };
     }
 
-    // -- Mix RGB — blend two inputs -----------------------------------
     case "mix-rgb": {
       const fac = (getInput("fac") as number) ?? 0.5;
       const a = getInput("color1");
@@ -287,7 +246,6 @@ function evaluateNode(
       return { type: "mix", fac, a, b };
     }
 
-    // -- Math node — arithmetic ---------------------------------------
     case "math": {
       const a = (getInput("value") as number) ?? 0;
       const b = (getInput("value-001") as number) ?? a;
@@ -295,7 +253,6 @@ function evaluateNode(
       return { type: "math", op, a, b };
     }
 
-    // -- Bump map -----------------------------------------------------
     case "bump": {
       return {
         type: "bump",
@@ -305,12 +262,10 @@ function evaluateNode(
       };
     }
 
-    // -- Texture Coordinate / UV Map → TSL uv() node -------------------
     case "tex-coord":
     case "uvmap":
       return { _isTexCoord: true };
 
-    // -- Color Ramp / ValToRGB ----------------------------------------
     case "valtorgb": {
       const fac = getInput("fac") as number | undefined;
       const rampData = (node as BlenderNode & { colorRamp?: ColorRampData })
@@ -338,15 +293,12 @@ function evaluateNode(
       return { __rampTexture: true, texture: tex } satisfies RampTextureMarker;
     }
 
-    // -- Separate XYZ — returns per-component swizzle markers when ------
-    // upstream is TSL-based, otherwise plain {X,Y,Z} values.
     case "sepxyz":
     case "seprgb": {
       const v = getInput("vector") ?? getInput("image");
       if (Array.isArray(v) && v.length >= 3) {
         return { x: v[0], y: v[1], z: v[2] };
       }
-      // TSL-based upstream — wrap each output as a channel swizzle marker
       if (v && typeof v === "object" && !Array.isArray(v)) {
         const swizzle = (ch: string) => ({
           _isSwizzled: true,
@@ -362,7 +314,6 @@ function evaluateNode(
       return { x: 0, y: 0, z: 0 };
     }
 
-    // -- Combine XYZ — merge scalars → [x, y, z] ---------------------
     case "combxyz":
     case "combrgb": {
       return [
@@ -372,7 +323,6 @@ function evaluateNode(
       ] as number[];
     }
 
-    // -- Hue / Saturation / Value -------------------------------------
     case "hue-sat":
       return {
         type: "hueSat",
@@ -382,11 +332,9 @@ function evaluateNode(
         color: getInput("color"),
       };
 
-    // -- RGB Curves — pass-through ------------------------------------
     case "curve-rgb":
       return getInput("color") ?? ([0.5, 0.5, 0.5] as number[]);
 
-    // -- Fallback — first connected or default input -------------------
     default:
       for (const sock of node.inputs) {
         if (sock.value !== undefined) return sock.value as EvalResult;
@@ -397,10 +345,6 @@ function evaluateNode(
   }
 }
 
-/**
- * Entry point — walk the graph from OUTPUT_MATERIAL.
- * Returns whatever the output node chains to (typically BSDF params).
- */
 function evaluateShaderGraph(
   graph: ShaderGraph,
 ): Record<string, unknown> | null {
@@ -413,208 +357,172 @@ function evaluateShaderGraph(
 }
 
 // ---------------------------------------------------------------------------
-// Main builder
+// Resolve helpers
 // ---------------------------------------------------------------------------
 
-function _setStandardProperties(
-  mat: THREE.MeshPhysicalNodeMaterial,
-  params: TSLMaterialParams,
-): void {
-  // ---- Scalar baselines (graph overrides apply on top) ----
-  mat.color.setRGB(params.color[0], params.color[1], params.color[2]);
-  mat.roughness = params.roughness;
-  mat.metalness = params.metalness;
-  if (params.emissiveIntensity > 0) {
-    mat.emissiveIntensity = params.emissiveIntensity;
-  }
-  mat.transparent = params.transparent;
-  if (params.opacity < 1.0) mat.opacity = params.opacity;
-  if (params.alphaTest > 0) mat.alphaTest = params.alphaTest;
-  mat.flatShading = params.flatShading;
-
-  // Physical baselines
-  mat.transmission = params.transmission;
-  mat.thickness = params.thickness;
-  mat.ior = params.ior;
-  mat.clearcoat = params.clearcoat;
-  mat.clearcoatRoughness = params.clearcoatRoughness;
-  mat.sheen = params.sheen;
-  mat.sheenRoughness = params.sheenRoughness;
-  mat.sheenColor.setRGB(
-    params.sheenColor[0],
-    params.sheenColor[1],
-    params.sheenColor[2],
-  );
-  mat.specularIntensity = params.specularIntensity;
-  mat.specularColor.setRGB(
-    params.specularColor[0],
-    params.specularColor[1],
-    params.specularColor[2],
-  );
-  mat.iridescence = params.iridescence;
-  mat.iridescenceIOR = params.iridescenceIOR;
-  mat.iridescenceThicknessRange = params.iridescenceThicknessRange;
-  mat.anisotropy = params.anisotropy;
-  mat.attenuationDistance = params.attenuationDistance;
-  mat.attenuationColor.setRGB(
-    params.attenuationColor[0],
-    params.attenuationColor[1],
-    params.attenuationColor[2],
-  );
-}
-
-/**
- * Resolve a shader-graph marker to a TSL node.
- *
- *  _isTSLTexture  →  texture(map, uv())
- *  _isSwizzled    →  resolve source then apply channel swizzle (.r / .g / .b)
- */
 function resolveTSLNode(marker: any, mapTex: THREE.Texture | null): any {
   if (!marker || typeof marker !== "object") return null;
 
-  // Swizzle marker — resolve source first, then swizzle
   if (marker._isSwizzled) {
     const src = resolveTSLNode(marker.source, mapTex);
     if (!src) return null;
     const ch = marker.channel as string;
-    // TSL supports .r .g .b .a and .x .y .z .w swizzles
     return (src as any)[ch];
   }
 
-  // TSL texture marker
   if (marker._isTSLTexture && mapTex) {
     return tslTexture(mapTex, tslUV());
   }
 
-  // Unknown object — assume it's already a TSL node
   return marker;
 }
+
+// ---------------------------------------------------------------------------
+// Main builder — all material properties derived from the shader graph
+// ---------------------------------------------------------------------------
 
 export function buildTSLMaterial(
   params: TSLMaterialParams,
 ): THREE.MeshPhysicalNodeMaterial {
-  const { graph } = params;
-
+  const { graph, texData } = params;
   const mat = new THREE.MeshPhysicalNodeMaterial();
-  _setStandardProperties(mat, params);
 
+  // ---- Evaluate graph ----
   const bsdf = (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0)
     ? evaluateShaderGraph(graph) as Record<string, any> | null
     : null;
 
-  const baseColor: any = bsdf?.baseColor;
-  const roughnessInput: any = bsdf?.roughness;
-  const metallicInput: any = bsdf?.metallic;
+  // ---- Resolve textures referenced by the graph ----
+  const texFromGraph = (imageName: unknown): THREE.Texture | null => {
+    if (typeof imageName === "string") {
+      return getOrCreateTexture(imageName, texData);
+    }
+    return null;
+  };
 
-  // --- Resolve color node ---
+  // ---- Base color ----
+  const baseColor: any = bsdf?.baseColor;
   if (baseColor) {
     if (baseColor.__rampTexture) {
       const marker = baseColor as RampTextureMarker;
       if (marker.constantColor) {
-        mat.color.setRGB(
-          marker.constantColor[0],
-          marker.constantColor[1],
-          marker.constantColor[2],
-        );
+        mat.color.setRGB(marker.constantColor[0], marker.constantColor[1], marker.constantColor[2]);
       } else {
         mat.colorNode = tslTexture(marker.texture, tslUV()) as any;
         mat.color.setRGB(1, 1, 1);
       }
-    } else if (baseColor._isTSLTexture && params.map) {
-      mat.colorNode = tslTexture(params.map, tslUV()) as any;
-      mat.map = null;
-      mat.color.setRGB(1, 1, 1);
+    } else if (baseColor._isTSLTexture) {
+      const tex = texFromGraph(baseColor.imageName);
+      if (tex) {
+        mat.colorNode = tslTexture(tex, tslUV()) as any;
+        mat.color.setRGB(1, 1, 1);
+      }
     } else if (typeof baseColor === "object" && !Array.isArray(baseColor)) {
       mat.colorNode = baseColor as ReturnType<typeof vec3>;
-      mat.map = null;
+    } else if (Array.isArray(baseColor) && baseColor.length >= 3) {
+      mat.color.setRGB(baseColor[0], baseColor[1], baseColor[2]);
+    }
+  } else {
+    // Default gray
+    mat.color.setRGB(0.5, 0.5, 0.5);
+  }
+
+  // ---- Roughness ----
+  const roughnessInput: any = bsdf?.roughness;
+  if (roughnessInput?._isSwizzled) {
+    const tex = texFromGraph(roughnessInput.source?.imageName);
+    const node = resolveTSLNode(roughnessInput, tex);
+    if (node) (mat as any).roughnessNode = node;
+  } else if (roughnessInput?._isTSLTexture) {
+    const tex = texFromGraph(roughnessInput.imageName);
+    if (tex) (mat as any).roughnessNode = tslTexture(tex, tslUV());
+  } else if (typeof roughnessInput === "number") {
+    mat.roughness = roughnessInput;
+  } else {
+    mat.roughness = 0.5;
+  }
+
+  // ---- Metallic ----
+  const metallicInput: any = bsdf?.metallic;
+  if (metallicInput?._isSwizzled) {
+    const tex = texFromGraph(metallicInput.source?.imageName);
+    const node = resolveTSLNode(metallicInput, tex);
+    if (node) (mat as any).metalnessNode = node;
+  } else if (metallicInput?._isTSLTexture) {
+    const tex = texFromGraph(metallicInput.imageName);
+    if (tex) (mat as any).metalnessNode = tslTexture(tex, tslUV());
+  } else if (typeof metallicInput === "number") {
+    mat.metalness = metallicInput;
+  } else {
+    mat.metalness = 0.0;
+  }
+
+  // ---- Emission ----
+  const emissionColor: any = bsdf?.emissionColor;
+  const emissionStrength: any = bsdf?.emissionStrength;
+  if (emissionColor?._isTSLTexture) {
+    const tex = texFromGraph(emissionColor.imageName);
+    if (tex) (mat as any).emissiveNode = tslTexture(tex, tslUV());
+  }
+  if (typeof emissionStrength === "number" && emissionStrength > 0) {
+    mat.emissiveIntensity = emissionStrength;
+  }
+
+  // ---- Alpha / transparency ----
+  const alphaInput: any = bsdf?.alpha;
+  if (typeof alphaInput === "number") {
+    if (alphaInput < 1.0) {
+      mat.transparent = true;
+      mat.opacity = alphaInput;
     }
   }
 
-  // --- Roughness: swizzle marker or direct texture ---
-  if (roughnessInput?._isSwizzled) {
-    const node = resolveTSLNode(roughnessInput, params.roughnessMap);
-    if (node) (mat as any).roughnessNode = node;
-  } else if (params.roughnessMap) {
-    (mat as any).roughnessNode = tslTexture(params.roughnessMap, tslUV());
+  // ---- Normal map (from graph Normal input) ----
+  const normalInput: any = bsdf?.normal;
+  if (normalInput?.type === "normalMap" && typeof normalInput.color === "string") {
+    const tex = texFromGraph(normalInput.color);
+    if (tex) mat.normalMap = tex;
   }
 
-  // --- Metallic: swizzle marker or direct texture ---
-  if (metallicInput?._isSwizzled) {
-    const node = resolveTSLNode(metallicInput, params.metalnessMap);
-    if (node) (mat as any).metalnessNode = node;
-  } else if (params.metalnessMap) {
-    (mat as any).metalnessNode = tslTexture(params.metalnessMap, tslUV());
-  }
+  // ---- Physical properties (scalars from graph) ----
+  const wireScalar = (input: any, prop: keyof THREE.MeshPhysicalNodeMaterial, fallback: number) => {
+    if (typeof input === "number") (mat as any)[prop] = input;
+    else (mat as any)[prop] = fallback;
+  };
 
-  // --- Normal map ---
-  if (params.normalMap) mat.normalMap = params.normalMap;
+  wireScalar(bsdf?.transmission, "transmission", 0);
+  wireScalar(bsdf?.ior, "ior", 1.5);
+  wireScalar(bsdf?.clearcoat, "clearcoat", 0);
+  wireScalar(bsdf?.clearcoatRoughness, "clearcoatRoughness", 0);
+  wireScalar(bsdf?.sheen, "sheen", 0);
+  wireScalar(bsdf?.sheenRoughness, "sheenRoughness", 0);
+  wireScalar(bsdf?.specular, "specularIntensity", 0);
+  wireScalar(bsdf?.anisotropic, "anisotropy", 0);
 
-  // --- Emission ---
-  if (params.emissiveMap) {
-    (mat as any).emissiveNode = tslTexture(params.emissiveMap, tslUV());
-  }
-
-  // --- Physical properties from shader graph ---
-  const wireMapNode = (
-    input: any,
-    map: THREE.Texture | null,
-    nodeProp: string,
-  ) => {
-    if (input?._isSwizzled) {
-      const node = resolveTSLNode(input, map);
+  // Physical texture nodes
+  const wireMap = (input: any, nodeProp: string) => {
+    if (input?._isTSLTexture) {
+      const tex = texFromGraph(input.imageName);
+      if (tex) (mat as any)[nodeProp] = tslTexture(tex, tslUV());
+    } else if (input?._isSwizzled) {
+      const tex = texFromGraph(input.source?.imageName);
+      const node = resolveTSLNode(input, tex);
       if (node) (mat as any)[nodeProp] = node;
-    } else if (map) {
-      (mat as any)[nodeProp] = tslTexture(map, tslUV());
     }
   };
 
   if (bsdf) {
-    wireMapNode(bsdf.transmission, params.transmissionMap, "transmissionNode");
-    wireMapNode(bsdf.clearcoat, params.clearcoatMap, "clearcoatNode");
-    wireMapNode(bsdf.clearcoatRoughness, params.clearcoatRoughnessMap, "clearcoatRoughnessNode");
-    wireMapNode(bsdf.sheen, params.sheenColorMap, "sheenNode");
-    wireMapNode(bsdf.sheenRoughness, params.sheenRoughnessMap, "sheenRoughnessNode");
-    wireMapNode(bsdf.sheenTint, null, "sheenColorNode");
-    wireMapNode(bsdf.specular, params.specularIntensityMap, "specularIntensityNode");
-    wireMapNode(bsdf.specularTint, params.specularColorMap, "specularColorNode");
-    wireMapNode(bsdf.anisotropic, params.anisotropyMap, "anisotropyNode");
-    wireMapNode(bsdf.transmissionRoughness, params.thicknessMap, "thicknessNode");
-
-    if (bsdf.ior && typeof bsdf.ior === "number") {
-      mat.ior = bsdf.ior;
-    }
+    wireMap(bsdf.transmission, "transmissionNode");
+    wireMap(bsdf.clearcoat, "clearcoatNode");
+    wireMap(bsdf.clearcoatRoughness, "clearcoatRoughnessNode");
+    wireMap(bsdf.sheen, "sheenNode");
+    wireMap(bsdf.sheenRoughness, "sheenRoughnessNode");
+    wireMap(bsdf.sheenTint, "sheenColorNode");
+    wireMap(bsdf.specular, "specularIntensityNode");
+    wireMap(bsdf.specularTint, "specularColorNode");
+    wireMap(bsdf.anisotropic, "anisotropyNode");
+    wireMap(bsdf.transmissionRoughness, "thicknessNode");
   }
 
   return mat;
-}
-
-// ---------------------------------------------------------------------------
-// Convenience — build geometry + material from a GeoBuffer
-// ---------------------------------------------------------------------------
-
-export function buildGeometryWithTSL(
-  buf: GeoBuffer,
-  params: Omit<TSLMaterialParams, "geometry">,
-): {
-  geometry: THREE.BufferGeometry;
-  material: THREE.MeshPhysicalMaterial | THREE.MeshPhysicalNodeMaterial;
-} {
-  const geo = new THREE.BufferGeometry();
-
-  geo.setAttribute("position", new THREE.BufferAttribute(buf.vertices, 3));
-  geo.setIndex(new THREE.BufferAttribute(buf.indices, 1));
-
-  if (buf.uvs && buf.uvs.length > 0) {
-    geo.setAttribute("uv", new THREE.BufferAttribute(buf.uvs, 2));
-  }
-
-  geo.computeVertexNormals();
-
-  if (params.normalMap) {
-    geo.computeTangents();
-  }
-
-  const mat = buildTSLMaterial({ geometry: geo, ...params });
-
-  return { geometry: geo, material: mat };
 }

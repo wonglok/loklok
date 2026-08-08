@@ -378,95 +378,8 @@ def get_scene_data():
             for v in face.verts:
                 indices.append(v.index)
 
-        # --- Flat shading detection ---
-        # If every face has smooth=False the mesh was explicitly flat-shaded
-        # (Blender's "Shade Flat"). Mixed or all-smooth stays smooth.
-        flat_shading = all(not f.smooth for f in bm.faces) if bm.faces else False
-
-        # --- Material properties (Principled BSDF) ---
-        color = [0.5, 0.5, 0.5]
-        roughness = 0.5
-        metallic = 0.0
-        emissive_color = [0.0, 0.0, 0.0]
-        emissive_strength = 0.0
-        texture = None          # base color map
-        roughness_map = None
-        metalness_map = None
-        normal_map = None
-        emissive_map = None     # emission color map
-        opacity = 1.0
-        transparent = False
-        alpha_test = 0.0
-
-        mat = obj.active_material
-        if mat and mat.use_nodes:
-            for node in mat.node_tree.nodes:
-                if node.type == 'BSDF_PRINCIPLED':
-                    bc = node.inputs.get('Base Color')
-                    if bc:
-                        tex_img = _find_image_texture(bc)
-                        if tex_img:
-                            texture = tex_img.name
-                            color = [1.0, 1.0, 1.0]  # white — texture determines color
-                        else:
-                            color = list(bc.default_value)[:3]
-
-                    rim = _find_image_texture(node.inputs.get('Roughness'))
-                    roughness_map = rim.name if rim else None
-                    mim = _find_image_texture(node.inputs.get('Metallic'))
-                    metalness_map = mim.name if mim else None
-                    nim = _find_image_texture(node.inputs.get('Normal'))
-                    normal_map = nim.name if nim else None
-
-                    r = node.inputs.get('Roughness')
-                    if r and not r.is_linked:
-                        roughness = r.default_value
-                    m = node.inputs.get('Metallic')
-                    if m and not m.is_linked:
-                        metallic = m.default_value
-                    ec = (node.inputs.get('Emission Color')
-                          or node.inputs.get('Emission'))
-                    if ec:
-                        em_tex = _find_image_texture(ec)
-                        if em_tex:
-                            emissive_map = em_tex.name
-                            emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
-                        else:
-                            emissive_color = list(ec.default_value)[:3]
-                    es = node.inputs.get('Emission Strength')
-                    if es:
-                        emissive_strength = es.default_value
-
-                    # Transparency
-                    alpha = node.inputs.get('Alpha')
-                    if alpha and not alpha.is_linked:
-                        opacity = alpha.default_value
-                    break
-
-            # Blend mode (on the material, not the shader node)
-            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
-            if blend_method == 'BLEND':
-                transparent = True
-            elif blend_method == 'HASHED':
-                transparent = True
-            elif blend_method == 'CLIP':
-                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
-
-        elif mat:
-            color = list(mat.diffuse_color)[:3]
-            if hasattr(mat, 'roughness'):
-                roughness = mat.roughness
-            if hasattr(mat, 'metallic'):
-                metallic = mat.metallic
-            blend_method = getattr(mat, 'blend_method', 'OPAQUE')
-            if blend_method == 'BLEND':
-                transparent = True
-            elif blend_method == 'HASHED':
-                transparent = True
-            elif blend_method == 'CLIP':
-                alpha_test = getattr(mat, 'alpha_threshold', 0.5)
-
-        # --- Shader node graph checksum (for realtime graph sync) ---
+        # --- Shader node graph — sole source of material properties ---
+        graph = None
         graph_hash = "0"
         try:
             graph = _extract_node_graph(obj.active_material)
@@ -475,25 +388,14 @@ def get_scene_data():
                 graph_json = json.dumps(graph, sort_keys=True)
                 graph_hash = hashlib.md5(graph_json.encode()).hexdigest()[:8]
         except Exception:
-            graph = None
             pass
 
-        # Version tag — changes when geometry, material, OR shader graph changes
+        # Version tag — changes when geometry or shader graph changes
         uv_cksum = 0
         if uvs:
             uv_cksum = int(sum(uvs) * 1000)
         version = (
             f"v{len(vertices)}_f{len(indices)}"
-            f"_c{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}"
-            f"_r{roughness:.4f}_m{metallic:.4f}"
-            f"_e{emissive_color[0]:.4f}_{emissive_color[1]:.4f}_{emissive_color[2]:.4f}"
-            f"_es{emissive_strength:.4f}"
-            f"_tx{texture or 'none'}"
-            f"_rm{roughness_map or 'none'}"
-            f"_mm{metalness_map or 'none'}"
-            f"_nm{normal_map or 'none'}"
-            f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
-            f"_fl{'1' if flat_shading else '0'}"
             f"_uv{uv_cksum}"
             f"_gh{graph_hash}"
         )
@@ -521,37 +423,18 @@ def get_scene_data():
         obj.rotation_mode = orig_mode
 
         obj_data = {
-            "name":              obj.name,
-            "position":          [pos.x, pos.z, -pos.y],
-            "quaternion":        [q.x,   q.z,   -q.y,   q.w],
-            "scale":             [s.x,   s.z,    s.y],
-            "color":             color,
-            "roughness":         roughness,
-            "metalness":         metallic,
-            "emissiveColor":     emissive_color,
-            "emissiveIntensity": emissive_strength,
-            "transparent":       transparent,
-            "opacity":           opacity,
-            "alphaTest":         alpha_test,
-            "flatShading":       flat_shading,
-            "version":           version,
+            "name":       obj.name,
+            "position":   [pos.x, pos.z, -pos.y],
+            "quaternion": [q.x,   q.z,   -q.y,   q.w],
+            "scale":      [s.x,   s.z,    s.y],
+            "version":    version,
         }
-        if texture:
-            obj_data["texture"] = texture
-        if roughness_map:
-            obj_data["roughnessMap"] = roughness_map
-        if metalness_map:
-            obj_data["metalnessMap"] = metalness_map
-        if normal_map:
-            obj_data["normalMap"] = normal_map
-        if emissive_map:
-            obj_data["emissiveMap"] = emissive_map
 
-        data["objects"].append(obj_data)
-
-        # --- Attach shader node graph (already extracted above for the hash) ---
+        # Attach shader node graph — the sole source of material properties
         if graph:
             obj_data["graph"] = {"nodes": graph}
+
+        data["objects"].append(obj_data)
 
     return json.dumps(data), geometry_dict
 
