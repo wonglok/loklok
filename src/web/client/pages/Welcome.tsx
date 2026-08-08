@@ -22,10 +22,10 @@ export default function Welcome() {
             Blender Plugin
           </a>
           <a
-            href="/projects"
+            href="/preview"
             className="px-4 py-2 rounded-lg text-white bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
           >
-            Projects
+            Preview
           </a>
         </div>
       </div>

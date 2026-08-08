@@ -338,7 +338,7 @@ export function ProjectsPage() {
               </button>
 
 <Link
-                to={`/projects/${p.projectID}`}
+                to="/preview"
                 className="
                   flex items-center gap-1 px-2.5 py-1.5 rounded-lg
                   text-text-muted hover:text-text-primary
