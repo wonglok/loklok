@@ -1,7 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import Welcome from "./pages/Welcome";
-import { ProjectsPage } from "./b3sync/app/projects/page";
-import { SceneSyncEditor } from "./b3sync/app/projects/[projectID]/page";
+import { SceneSyncEditor } from "./pages/SceneSyncEditor";
 
 export default function App() {
   return (
