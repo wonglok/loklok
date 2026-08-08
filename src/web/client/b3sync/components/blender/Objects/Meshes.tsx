@@ -171,7 +171,11 @@ export function Meshes() {
         normalMap: obj.normalMap,
         emissiveMap: obj.emissiveMap,
       };
-      const matKey = computeMaterialCacheKey({ graph: obj.graph, texData, flat });
+      const matKey = computeMaterialCacheKey({
+        graph: obj.graph,
+        texData,
+        flat,
+      });
       const material = buildMaterial({ graph: obj.graph, texData, flat });
 
       const geoVersion = geoBuf.version;
@@ -205,7 +209,13 @@ export function Meshes() {
           cached = undefined;
         }
 
-        const geo = buildGeometry(geoBuf, !!(obj.normalMap || obj.graph?.nodes?.some(n => n.type === "normal-map")));
+        const geo = buildGeometry(
+          geoBuf,
+          !!(
+            obj.normalMap ||
+            obj.graph?.nodes?.some((n) => n.type === "normal-map")
+          ),
+        );
         const im = new THREE.InstancedMesh(geo, material, 1);
         im.name = obj.name;
         im.castShadow = true;

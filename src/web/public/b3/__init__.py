@@ -641,13 +641,13 @@ def _extract_world_hdr():
 # Material texture extraction (must run on main thread)
 # ---------------------------------------------------------------------------
 def _extract_textures():
-    """Scan all mesh objects for Image Textures connected to Principled BSDF.
-    Sends encoded image bytes (PNG / JPG / WebP) so the web viewer can use
-    THREE.TextureLoader which handles sRGB encoding correctly.
+    """Scan **every** TEX_IMAGE node in every mesh material's node tree and
+    collect all referenced images.  This catches textures connected through
+    intermediate nodes (Mix, ColorRamp, Bump, …) and textures on non-Principled
+    shaders — i.e. every texture that is actually used in the scene.
 
     Returns dict of image_name → (mime_type, bytes_data, cache_key)."""
     textures = {}
-    INPUTS = ('Base Color', 'Roughness', 'Metallic', 'Normal', 'Emission Color')
 
     for obj in bpy.context.scene.objects:
         if obj.type != 'MESH':
@@ -656,43 +656,42 @@ def _extract_textures():
         if not mat or not mat.use_nodes:
             continue
 
+        # Walk every node — grab all TEX_IMAGE nodes regardless of how they're wired
         for node in mat.node_tree.nodes:
-            if node.type != 'BSDF_PRINCIPLED':
+            if node.type != 'TEX_IMAGE':
                 continue
-            for input_name in INPUTS:
-                sock = node.inputs.get(input_name)
-                img = _find_image_texture(sock)  # direct bpy Image reference
-                if img is None:
-                    continue
-                name = _slugify(img.name)
-                if name in textures:
-                    continue
+            img = node.image
+            if img is None:
+                continue
 
-                # Get encoded image bytes (PNG / JPG / WebP)
-                img_bytes, mime, ext = _get_image_bytes(img)
-                if img_bytes is None:
-                    print(f"[B3Sync] WARNING: no image data for '{name}'")
-                    continue
+            name = _slugify(img.name)
+            if name in textures:
+                continue
 
-                w, h = img.size
-                key = f"{name}_{w}x{h}"
+            # Get encoded image bytes (PNG / JPG / WebP)
+            img_bytes, mime, ext = _get_image_bytes(img)
+            if img_bytes is None:
+                print(f"[B3Sync] WARNING: no image data for '{name}'")
+                continue
 
-                # Check cache
-                with _lock:
-                    cached = _state["tex_cache"].get(name)
-                if cached is not None and cached[2] == key:
-                    textures[name] = cached
-                    continue
+            w, h = img.size
+            key = f"{name}_{w}x{h}"
 
-                result = (mime, img_bytes, key)
-                textures[name] = result
+            # Check cache
+            with _lock:
+                cached = _state["tex_cache"].get(name)
+            if cached is not None and cached[2] == key:
+                textures[name] = cached
+                continue
 
-                with _lock:
-                    _state["tex_cache"][name] = result
-                    for ws_set in _state["tex_sent"].values():
-                        ws_set.discard(name)
-                print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
-            break
+            result = (mime, img_bytes, key)
+            textures[name] = result
+
+            with _lock:
+                _state["tex_cache"][name] = result
+                for ws_set in _state["tex_sent"].values():
+                    ws_set.discard(name)
+            print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
 
     # Purge stale cache entries
     with _lock:
