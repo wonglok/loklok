@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { FileManager } from "../workspace/FileManager";
-import { DeployButton } from "../workspace/DeployButton";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
@@ -162,8 +161,6 @@ export function Sidebar() {
         <span className="text-sm font-semibold tracking-wide text-text-primary flex-1">
           Sync Panel
         </span>
-
-        <DeployButton />
       </div>
 
       <div className="p-2">

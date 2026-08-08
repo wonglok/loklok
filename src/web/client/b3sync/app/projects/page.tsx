@@ -91,24 +91,6 @@ function ArrowRightIcon() {
   );
 }
 
-function EyeIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
 function SpinnerIcon() {
   return (
     <svg
@@ -355,20 +337,7 @@ export function ProjectsPage() {
                 <TrashIcon />
               </button>
 
-              <Link
-                to={`/viewer/${p.projectID}`}
-                className="
-                  flex items-center gap-1 px-2 py-1.5 rounded-lg
-                  text-text-muted hover:text-accent
-                  border border-transparent hover:bg-accent-subtle
-                  transition-all duration-150
-                "
-                title="View deployed scene"
-              >
-                <EyeIcon />
-              </Link>
-
-              <Link
+<Link
                 to={`/projects/${p.projectID}`}
                 className="
                   flex items-center gap-1 px-2.5 py-1.5 rounded-lg
