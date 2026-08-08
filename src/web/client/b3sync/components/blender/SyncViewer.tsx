@@ -14,6 +14,7 @@ import {
 } from "../utils/meshBuilder";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import type { BlenderObject, GeoBuffer } from "../types/blenderTypes";
+import { shouldSkipBlenderTransform } from "./AnimationController";
 
 // ---------------------------------------------------------------------------
 // Module-level caches
@@ -406,18 +407,20 @@ export function SyncViewer() {
         }
 
         if (cached) {
-          cached.mesh.position.set(
-            obj.position[0],
-            obj.position[1],
-            obj.position[2],
-          );
-          cached.mesh.quaternion.set(
-            obj.quaternion[0],
-            obj.quaternion[1],
-            obj.quaternion[2],
-            obj.quaternion[3],
-          );
-          cached.mesh.scale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
+          if (!shouldSkipBlenderTransform(obj.name)) {
+            cached.mesh.position.set(
+              obj.position[0],
+              obj.position[1],
+              obj.position[2],
+            );
+            cached.mesh.quaternion.set(
+              obj.quaternion[0],
+              obj.quaternion[1],
+              obj.quaternion[2],
+              obj.quaternion[3],
+            );
+            cached.mesh.scale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
+          }
         }
       }
     }

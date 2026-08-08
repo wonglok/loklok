@@ -34,6 +34,8 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
+  /** Raw animation GLB binary from Blender — loaded by AnimationController via GLTFLoader. */
+  animationGlb: ArrayBuffer | null;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -47,6 +49,8 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
+  /** Store the latest animation GLB blob — AnimationController picks it up. */
+  setAnimationGlb: (data: ArrayBuffer | null) => void;
 
   /** Bulk-load saved project data — all state set atomically. */
   loadSaveData: (data: {
@@ -72,6 +76,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
+  animationGlb: null,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -103,6 +108,8 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
+
+  setAnimationGlb: (data) => set({ animationGlb: data }),
 
   loadSaveData: (data) =>
     set({

@@ -11,3 +11,7 @@ must always use components for react code organistaion
 # icons
 
 must use svg icon instead of emoji
+
+# Python Plugin Script
+
+/src/web/public/b3/**init**.py
