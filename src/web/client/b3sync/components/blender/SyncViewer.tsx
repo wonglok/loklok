@@ -65,13 +65,39 @@ export function SyncViewer() {
   const camera = useThree((r) => r.camera);
 
   // ------------------------------------------------------------------
-  // Default scene setup — camera + ambient light so the canvas is never black
+  // Default scene setup — fallback lights so objects are visible even
+  // before Blender HDR / light data arrives
   // ------------------------------------------------------------------
   useEffect(() => {
-    if (camera && camera.position.length() < 0.1) {
+    const s = sceneRef.current;
+    if (!s) return;
+
+    // Add fallback ambient + directional light
+    const amb = new THREE.AmbientLight("#ffffff", 0.4);
+    amb.name = "__fallback_ambient";
+    s.add(amb);
+
+    const dir = new THREE.DirectionalLight("#ffffff", 0.6);
+    dir.name = "__fallback_directional";
+    dir.position.set(5, 10, 5);
+    s.add(dir);
+
+    // Position default camera
+    if (camera) {
       camera.position.set(5, 5, 5);
       camera.lookAt(0, 0, 0);
     }
+
+    return () => {
+      // Remove fallback lights when component unmounts (real lights take over)
+      const toRemove: THREE.Object3D[] = [];
+      s.traverse((c) => {
+        if (c.name === "__fallback_ambient" || c.name === "__fallback_directional") {
+          toRemove.push(c);
+        }
+      });
+      for (const o of toRemove) s.remove(o);
+    };
   }, [camera]);
 
   // ------------------------------------------------------------------

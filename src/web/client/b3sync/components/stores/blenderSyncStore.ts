@@ -1,7 +1,13 @@
 import { create } from "zustand";
 import { useBlenderStore } from "./blenderStore";
 import { useSettingsStore } from "./settingsStore";
-import type { CameraData, LightData, RigBuffer, AnimClipData, KeyframeTrackData } from "../types/blenderTypes";
+import type {
+  CameraData,
+  LightData,
+  RigBuffer,
+  AnimClipData,
+  KeyframeTrackData,
+} from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -149,46 +155,58 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
 
           const matSize = pending.boneCount * 16 * 4;
           const invBindMatrices = new Float32Array(
-            event.data, offset, pending.boneCount * 16,
+            event.data,
+            offset,
+            pending.boneCount * 16,
           );
           offset += matSize;
 
           const skinIndices = new Uint16Array(
-            event.data, offset, pending.vertexCount * 4,
+            event.data,
+            offset,
+            pending.vertexCount * 4,
           );
           offset += pending.vertexCount * 4 * 2;
 
           const skinWeights = new Float32Array(
-            event.data, offset, pending.vertexCount * 4,
+            event.data,
+            offset,
+            pending.vertexCount * 4,
           );
           offset += pending.vertexCount * 4 * 4;
 
           // Animation clips
           const animClips: AnimClipData[] = [];
           for (let c = 0; c < pending.clipCount; c++) {
-            const nameLen = dv.getUint32(offset, true); offset += 4;
+            const nameLen = dv.getUint32(offset, true);
+            offset += 4;
             const name = new TextDecoder().decode(
               new Uint8Array(event.data, offset, nameLen),
             );
             offset += nameLen;
-            const duration = dv.getFloat32(offset, true); offset += 4;
-            const trackCount = dv.getUint32(offset, true); offset += 4;
+            const duration = dv.getFloat32(offset, true);
+            offset += 4;
+            const trackCount = dv.getUint32(offset, true);
+            offset += 4;
 
             const tracks: KeyframeTrackData[] = [];
             for (let t = 0; t < trackCount; t++) {
-              const boneIndex = dv.getUint32(offset, true); offset += 4;
-              const property = dv.getUint8(offset); offset += 1;
+              const boneIndex = dv.getUint32(offset, true);
+              offset += 4;
+              const property = dv.getUint8(offset);
+              offset += 1;
               offset += 3; // padding to align
-              const keyCount = dv.getUint32(offset, true); offset += 4;
+              const keyCount = dv.getUint32(offset, true);
+              offset += 4;
 
-              const times = new Float32Array(
-                event.data, offset, keyCount,
-              );
+              const times = new Float32Array(event.data, offset, keyCount);
               offset += keyCount * 4;
 
               const valueSize = property === 1 ? 4 : 3; // quat=4, pos/scale=3
               const values = new Float32Array(
-                event.data, offset, keyCount * valueSize,
+                event.data,
+                offset,
+                keyCount * valueSize,
               );
               offset += keyCount * valueSize * 4;
 
