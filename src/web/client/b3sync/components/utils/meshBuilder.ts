@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu";
 import type { GeoBuffer } from "../types/blenderTypes";
 import type { TextureData } from "../types/blenderTypes";
-import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
+import { buildTSLMaterial, getGraphImageNames, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Module-level caches
@@ -63,10 +63,16 @@ export interface BuildMaterialParams {
   texData: Map<string, TextureData>;
 }
 
-/** Compute a cache key from the serialised shader graph. */
+/** Compute a cache key from the serialised shader graph + texture availability. */
 export function computeMaterialCacheKey(params: BuildMaterialParams): string {
   if (params.graph) {
-    return JSON.stringify(params.graph);
+    const parts = [JSON.stringify(params.graph)];
+    // Include texture availability so the key changes when textures arrive
+    const imageNames = getGraphImageNames(params.graph);
+    for (const name of imageNames.sort()) {
+      parts.push(`${name}:${params.texData.has(name) ? "1" : "0"}`);
+    }
+    return parts.join("|");
   }
   return "no-graph";
 }

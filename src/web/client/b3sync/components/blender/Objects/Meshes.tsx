@@ -103,7 +103,10 @@ export function Meshes() {
       const geoBuf = geoBuffers.get(obj.name);
 
       // Request geometry if missing or version mismatch
-      if ((!geoBuf || geoBuf.version !== obj.version) && !_requestedGeo.has(obj.name)) {
+      if (
+        (!geoBuf || geoBuf.version !== obj.version) &&
+        !_requestedGeo.has(obj.name)
+      ) {
         _requestedGeo.add(obj.name);
         send({ type: "request-geo", name: obj.name });
       }
@@ -131,7 +134,10 @@ export function Meshes() {
       const wasNew = !meshes.has(obj.name);
       tx.targetPos.set(obj.position[0], obj.position[1], obj.position[2]);
       tx.targetQuat.set(
-        obj.quaternion[0], obj.quaternion[1], obj.quaternion[2], obj.quaternion[3],
+        obj.quaternion[0],
+        obj.quaternion[1],
+        obj.quaternion[2],
+        obj.quaternion[3],
       );
       tx.targetScale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
 
@@ -142,7 +148,11 @@ export function Meshes() {
       // ---- Rebuild mesh if geometry or material changed ----
       let cached = meshes.get(obj.name);
 
-      if (!cached || cached.geoVersion !== geoVersion || cached.materialKey !== matKey) {
+      if (
+        !cached ||
+        cached.geoVersion !== geoVersion ||
+        cached.materialKey !== matKey
+      ) {
         if (cached) {
           sc.remove(cached.mesh);
           cached = undefined;
