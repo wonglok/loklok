@@ -1,15 +1,18 @@
 "use client";
 
-import { CameraSync } from "../blender/CameraSync";
-import { CanvasGPU } from "../blender/CanvasGPU";
-import { Sidebar } from "../blender/Sidebar";
-import { SyncViewer } from "../blender/SyncViewer";
-import { useBlenderSyncStore } from "../stores/blenderSyncStore";
-import { useSettingsStore } from "../stores/settingsStore";
+import { CameraSync } from "../../../components/blender/CameraSync";
+import { CanvasGPU } from "../../../components/blender/CanvasGPU";
+import { Sidebar } from "../../../components/blender/Sidebar";
+import { SyncViewer } from "../../../components/blender/SyncViewer";
+import { useBlenderSyncStore } from "../../../components/stores/blenderSyncStore";
+import { useSettingsStore } from "../../../components/stores/settingsStore";
 import { useEffect } from "react";
+import { useParams } from "react-router-dom";
 
 export function SceneSyncEditor() {
   const disconnect = useBlenderSyncStore((s) => s.disconnect);
+
+  const { projectID } = useParams<{ projectID: string }>();
 
   // Hydrate persisted settings from localStorage on the client (SSR-safe)
   const hydrate = useSettingsStore((s) => s.hydrate);
@@ -19,13 +22,15 @@ export function SceneSyncEditor() {
 
   // Connect to Blender WebSocket on mount, disconnect on unmount
   useEffect(() => {
+    if (!projectID) return;
+
     const connectFn = useBlenderSyncStore.getState().connect;
     connectFn();
 
     return () => {
       disconnect();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectID]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="w-screen h-screen relative">

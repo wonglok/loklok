@@ -5,7 +5,6 @@ import type {
   ImageData,
   TextureData,
   GeoBuffer,
-  RigBuffer,
   CameraData,
   LightData,
 } from "../types/blenderTypes";
@@ -35,8 +34,6 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
-  /** Skeleton + skin + animation data for rigged meshes, keyed by mesh name. */
-  rigBuffers: Map<string, RigBuffer>;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -50,7 +47,6 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
-  setRigData: (name: string, data: RigBuffer) => void;
 
 }
 
@@ -66,7 +62,6 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
-  rigBuffers: new Map(),
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -98,11 +93,4 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
-
-  setRigData: (name, data) =>
-    set((prev) => {
-      const next = new Map(prev.rigBuffers);
-      next.set(name, data);
-      return { rigBuffers: next };
-    }),
 }));

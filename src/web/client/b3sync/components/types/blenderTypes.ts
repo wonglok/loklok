@@ -43,44 +43,6 @@ export interface GeoBuffer {
   uvs?: Float32Array;
 }
 
-// ---------------------------------------------------------------------------
-// Rig / Skeleton / Animation types
-// ---------------------------------------------------------------------------
-
-/** Per-track keyframe data for a single bone property. */
-export interface KeyframeTrackData {
-  boneIndex: number;
-  /** 0 = position, 1 = quaternion, 2 = scale */
-  property: number;
-  times: Float32Array;
-  values: Float32Array;
-}
-
-/** A single animation clip (action) with baked bone tracks. */
-export interface AnimClipData {
-  name: string;
-  duration: number;
-  tracks: KeyframeTrackData[];
-}
-
-/** Skeleton + skin + animation data for one rigged mesh. */
-export interface RigBuffer {
-  boneNames: string[];
-  boneParents: Int32Array;
-  /** Bind-pose local position per bone — 3 floats each, flat array. */
-  boneBindPos: Float32Array;
-  /** Bind-pose local quaternion per bone — 4 floats each, flat array. */
-  boneBindQuat: Float32Array;
-  /** Bind-pose local scale per bone — 3 floats each, flat array. */
-  boneBindScl: Float32Array;
-  /** vertexCount × 4 — up to 4 bone indices per vertex (0 = unused slot). */
-  skinIndices: Uint16Array;
-  /** vertexCount × 4 — corresponding weights, normalized to sum to 1. */
-  skinWeights: Float32Array;
-  /** Baked animation clips (empty array if no animation). */
-  animClips: AnimClipData[];
-}
-
 export interface SceneData {
   objects: BlenderObject[];
 }
