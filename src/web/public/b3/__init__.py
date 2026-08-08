@@ -79,8 +79,6 @@ _state = {
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
     "lights_cache": None,       # serialized lights JSON string (change detection)
     "lights_sent": set(),       # ws ids that already received current lights payload
-    "animations_cache": None,   # serialized animation clips JSON string (change detection)
-    "animations_sent": set(),   # ws ids that already received current animations payload
     "port": 0,            # actual port the running server is bound to (0 = none)
 }
 
@@ -899,147 +897,6 @@ def _extract_lights():
     return lights
 
 
-
-# ---------------------------------------------------------------------------
-# WebSocket handler
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Keyframe animation extraction (must run on main thread)
-# ---------------------------------------------------------------------------
-def _extract_animations():
-    """Extract keyframe animation data from all objects with actions.
-
-    Groups FCurves by action name, then by (object name, property).
-    Converts keyframe values from Blender Z-up to Three.js Y-up space.
-    Times are converted from frames to seconds using the scene FPS.
-
-    Returns (header_json, blob_bytes) tuple, or None.
-      - header_json: clip metadata with channel sizes for binary unpacking
-      - blob_bytes:  packed float32 arrays — for each channel: [times…][values…]
-    """
-    scene = bpy.context.scene
-    fps = scene.render.fps / scene.render.fps_base
-
-    # action_name -> {object_name: {prop: {time_sec: [component_values]}}}
-    actions = {}
-    scanned = 0
-    with_action = 0
-
-    for obj in scene.objects:
-        scanned += 1
-        ad = getattr(obj, "animation_data", None)
-        if ad is None or ad.action is None:
-            continue
-
-        with_action += 1
-        action = ad.action
-        action_name = action.name
-        obj_name = obj.name
-        fcurve_paths = [fc.data_path for fc in action.fcurves]
-        print(f"[B3Sync] Animation: object '{obj_name}' action '{action_name}' — FCurves: {fcurve_paths}")
-
-        if action_name not in actions:
-            actions[action_name] = {}
-        if obj_name not in actions[action_name]:
-            actions[action_name][obj_name] = {}
-
-        for fcurve in action.fcurves:
-            dp = fcurve.data_path
-
-            # Only handle transform properties (strip "delta_" prefix if present)
-            if dp in ("delta_location", "delta_rotation_quaternion", "delta_scale"):
-                dp = dp[6:]  # strip "delta_"
-            if dp not in ("location", "rotation_quaternion", "scale"):
-                continue
-
-            arr_idx = fcurve.array_index  # 0=x, 1=y, 2=z, (3=w for quat)
-            comp_count = 4 if dp == "rotation_quaternion" else 3
-
-            prop = actions[action_name][obj_name]
-            if dp not in prop:
-                prop[dp] = {}
-
-            for kp in fcurve.keyframe_points:
-                time_sec = kp.co[0] / fps
-                value = kp.co[1]
-
-                if time_sec not in prop[dp]:
-                    prop[dp][time_sec] = [0.0] * comp_count
-                prop[dp][time_sec][arr_idx] = value
-
-    print(f"[B3Sync] Animation: scanned {scanned} objects, {with_action} have actions")
-
-    # Convert to wire format
-    clips_meta = []       # clip metadata for the JSON header
-    all_arrays = []       # float lists to pack into the binary blob
-
-    for action_name, objects in actions.items():
-        channels_meta = []
-        for obj_name, props in objects.items():
-            for dp, frame_data in props.items():
-                times = sorted(frame_data.keys())
-                raw_values = [frame_data[t] for t in times]
-
-                # Blender Z-up -> Three.js Y-up
-                if dp == "location":
-                    # (x, y, z) -> (x, z, -y)
-                    values = []
-                    for v in raw_values:
-                        values.extend([v[0], v[2], -v[1]])
-                elif dp == "rotation_quaternion":
-                    # Blender (w, x, y, z) -> Three.js (x, z, -y, w)
-                    values = []
-                    for v in raw_values:
-                        values.extend([v[1], v[3], -v[2], v[0]])
-                elif dp == "scale":
-                    # (x, y, z) -> (x, z, y)
-                    values = []
-                    for v in raw_values:
-                        values.extend([v[0], v[2], v[1]])
-                else:
-                    continue
-
-                prop_map = {
-                    "location": "position",
-                    "rotation_quaternion": "quaternion",
-                    "scale": "scale",
-                }
-
-                channels_meta.append({
-                    "objectName": obj_name,
-                    "property": prop_map[dp],
-                    "timeCount": len(times),
-                    "valueCount": len(values),
-                })
-                all_arrays.append(times)
-                all_arrays.append(values)
-
-        if channels_meta:
-            clips_meta.append({
-                "name": action_name,
-                "fps": fps,
-                "channels": channels_meta,
-            })
-
-    if not clips_meta:
-        print("[B3Sync] Animation: no clips extracted (no objects with keyframe data found)")
-        return None
-
-    print(f"[B3Sync] Animation: extracted {len(clips_meta)} clip(s) — {sum(len(c['channels']) for c in clips_meta)} channel(s)")
-    header = json.dumps({"type": "animation", "clips": clips_meta})
-
-    # Pack all float arrays into a single binary blob
-    flat = []
-    for arr in all_arrays:
-        flat.extend(arr)
-    blob = array.array('f', flat).tobytes() if flat else b''
-
-    return (header, blob)
-
-
-# ---------------------------------------------------------------------------
-# WebSocket handler
-# ---------------------------------------------------------------------------
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
@@ -1056,7 +913,6 @@ async def _handler(websocket):
             _state["tex_sent"].pop(ws_id, None)
             _state["hdr_sent"].discard(ws_id)
             _state["scene_cams_sent"].discard(ws_id)
-            _state["animations_sent"].discard(ws_id)
             _state["lights_sent"].discard(ws_id)
         print(f"[B3Sync] Client disconnected ({len(_state['clients'])} total)")
 
@@ -1274,32 +1130,6 @@ def _timer():
                         _state["lights_sent"].add(ws_id)
                     try:
                         asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
-                    except RuntimeError:
-                        pass
-
-            # Keyframe animations — send once per client, re-send only on change
-            # (outside if send_cam: — animations are independent of camera sync)
-            anim_result = _extract_animations()
-            if anim_result is not None:
-                anim_header, anim_blob = anim_result
-                with _lock:
-                    cached = _state["animations_cache"]
-                    if cached != anim_header:
-                        _state["animations_cache"] = anim_header
-                        _state["animations_sent"].clear()
-                for ws in current:
-                    ws_id = id(ws)
-                    with _lock:
-                        if ws_id in _state["animations_sent"]:
-                            continue
-                        _state["animations_sent"].add(ws_id)
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            ws.send(anim_header), loop
-                        )
-                        asyncio.run_coroutine_threadsafe(
-                            ws.send(anim_blob), loop
-                        )
                     except RuntimeError:
                         pass
     except Exception as e:

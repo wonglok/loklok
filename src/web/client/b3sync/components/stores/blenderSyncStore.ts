@@ -1,26 +1,11 @@
 import { create } from "zustand";
 import { useBlenderStore } from "./blenderStore";
 import { useSettingsStore } from "./settingsStore";
-import type {
-  CameraData,
-  LightData,
-  AnimationClipData,
-} from "../types/blenderTypes";
+import type { CameraData, LightData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
-
-type AnimClipMeta = {
-  name: string;
-  fps: number;
-  channels: {
-    objectName: string;
-    property: string;
-    timeCount: number;
-    valueCount: number;
-  }[];
-};
 
 type PendingBinary =
   | { kind: "hdr"; width: number; height: number }
@@ -32,10 +17,6 @@ type PendingBinary =
       vCount: number;
       iCount: number;
       hasUVs: boolean;
-    }
-  | {
-      kind: "animation";
-      clips: AnimClipMeta[];
     };
 
 // ---------------------------------------------------------------------------
@@ -87,7 +68,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
-      setAnimations,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -147,45 +127,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             indices,
             uvs,
           });
-        } else if (pending.kind === "animation") {
-          // Unpack animation binary blob:
-          // For each clip → for each channel → [float32 times][float32 values]
-          let offset = 0;
-          const animations: AnimationClipData[] = [];
-
-          for (const clip of pending.clips) {
-            const channels: AnimationClipData["channels"] = [];
-
-            for (const ch of clip.channels) {
-              const timeFloats = ch.timeCount;
-              const valueFloats = ch.valueCount;
-
-              const times = Array.from(
-                new Float32Array(event.data, offset, timeFloats),
-              );
-              offset += timeFloats * 4;
-
-              const values = Array.from(
-                new Float32Array(event.data, offset, valueFloats),
-              );
-              offset += valueFloats * 4;
-
-              channels.push({
-                objectName: ch.objectName,
-                property: ch.property as "position" | "quaternion" | "scale",
-                times,
-                values,
-              });
-            }
-
-            animations.push({
-              name: clip.name,
-              fps: clip.fps,
-              channels,
-            });
-          }
-
-          useBlenderStore.getState().setAnimations(animations);
         }
         return;
       }
@@ -284,25 +225,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             castShadow: !!l.castShadow,
           }));
           useBlenderStore.getState().setLights(lights);
-        } else if (data.type === "animation") {
-          const clips = (Array.isArray(data.clips) ? data.clips : []) as any[];
-          set({
-            pendingBinary: {
-              kind: "animation",
-              clips: clips.map((c: any) => ({
-                name: c.name as string,
-                fps: c.fps as number,
-                channels: (Array.isArray(c.channels) ? c.channels : []).map(
-                  (ch: any) => ({
-                    objectName: ch.objectName as string,
-                    property: ch.property as string,
-                    timeCount: ch.timeCount as number,
-                    valueCount: ch.valueCount as number,
-                  }),
-                ),
-              })),
-            },
-          });
         } else if (Array.isArray(data.objects)) {
           useBlenderStore.getState().setSceneData(data as any);
         }

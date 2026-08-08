@@ -7,7 +7,6 @@ import type {
   GeoBuffer,
   CameraData,
   LightData,
-  AnimationClipData,
 } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
@@ -35,8 +34,6 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
-  /** Keyframe animation clips from Blender — sent once per client, re-sent on change. */
-  animations: AnimationClipData[];
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -50,7 +47,6 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
-  setAnimations: (next: AnimationClipData[]) => void;
 
   /** Bulk-load saved project data — all state set atomically. */
   loadSaveData: (data: {
@@ -61,7 +57,6 @@ interface BlenderStore {
     cameras: CameraData[];
     geoBuffers: Map<string, GeoBuffer>;
     texData: Map<string, TextureData>;
-    animations: AnimationClipData[];
   }) => void;
 }
 
@@ -77,7 +72,6 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
-  animations: [],
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -110,8 +104,6 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
 
   setLights: (next) => set({ lights: next }),
 
-  setAnimations: (next) => set({ animations: next }),
-
   loadSaveData: (data) =>
     set({
       sceneData: data.sceneData,
@@ -121,6 +113,5 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
       cameras: data.cameras,
       geoBuffers: data.geoBuffers,
       texData: data.texData,
-      animations: data.animations,
     }),
 }));
