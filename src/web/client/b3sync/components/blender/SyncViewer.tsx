@@ -391,24 +391,27 @@ export function SyncViewer() {
           if (geoBuf && geoBuf.version === obj.version) {
             if (isRigged) {
               // ---- SkinnedMesh path ----
-              const result = buildSkinnedGeometryFromBuffer({
-                buf: geoBuf,
-                color: obj.color,
-                roughness: obj.roughness ?? 0.5,
-                metalness: obj.metalness ?? 0.0,
-                emissiveColor: obj.emissiveColor ?? [0, 0, 0],
-                emissiveIntensity: obj.emissiveIntensity ?? 0.0,
-                map,
-                roughnessMap,
-                metalnessMap,
-                normalMap,
-                emissiveMap,
-                transparent: obj.transparent,
-                opacity: obj.opacity,
-                alphaTest: obj.alphaTest,
-                flatShading: obj.flatShading,
-                graph: obj.graph,
-              }, rig);
+              const result = buildSkinnedGeometryFromBuffer(
+                {
+                  buf: geoBuf,
+                  color: obj.color,
+                  roughness: obj.roughness ?? 0.5,
+                  metalness: obj.metalness ?? 0.0,
+                  emissiveColor: obj.emissiveColor ?? [0, 0, 0],
+                  emissiveIntensity: obj.emissiveIntensity ?? 0.0,
+                  map,
+                  roughnessMap,
+                  metalnessMap,
+                  normalMap,
+                  emissiveMap,
+                  transparent: obj.transparent,
+                  opacity: obj.opacity,
+                  alphaTest: obj.alphaTest,
+                  flatShading: obj.flatShading,
+                  graph: obj.graph,
+                },
+                rig,
+              );
 
               const { skinnedMesh, animClips } = result;
               skinnedMesh.name = obj.name;
