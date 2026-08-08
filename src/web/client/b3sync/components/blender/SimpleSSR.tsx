@@ -86,6 +86,10 @@ export function SimpleSSR() {
     // Apply SMAA for anti-aliasing
     const outputNode = smaa(scenePassColor.add(ssrPass.rgb));
     renderPipeline.outputNode = outputNode;
+
+    return () => {
+      renderPipeline.dispose();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ------------------------------------------------------------------
