@@ -420,7 +420,8 @@ function _setStandardProperties(
   mat: THREE.MeshPhysicalNodeMaterial,
   params: TSLMaterialParams,
 ): void {
-  // ---- Scalar properties (still valid alongside TSL nodes) ----
+  // ---- Scalar baselines (graph overrides apply on top) ----
+  mat.color.setRGB(params.color[0], params.color[1], params.color[2]);
   mat.roughness = params.roughness;
   mat.metalness = params.metalness;
   if (params.emissiveIntensity > 0) {
@@ -431,60 +432,12 @@ function _setStandardProperties(
   if (params.alphaTest > 0) mat.alphaTest = params.alphaTest;
   mat.flatShading = params.flatShading;
 
-  // ---- TSL texture nodes ----
-  // Base color
-  if (params.map) {
-    mat.colorNode = tslTexture(params.map, tslUV()) as any;
-    mat.color.setRGB(1, 1, 1);
-  } else {
-    mat.color.setRGB(params.color[0], params.color[1], params.color[2]);
-  }
-
-  // Roughness
-  if (params.roughnessMap) {
-    (mat as any).roughnessNode = tslTexture(params.roughnessMap, tslUV());
-  }
-
-  // Metallic
-  if (params.metalnessMap) {
-    (mat as any).metalnessNode = tslTexture(params.metalnessMap, tslUV());
-  }
-
-  // Normal — keep as legacy (normal-map TSL wiring is handled separately)
-  if (params.normalMap) mat.normalMap = params.normalMap;
-
-  // Emission
-  if (params.emissiveMap) {
-    (mat as any).emissiveNode = tslTexture(params.emissiveMap, tslUV());
-  }
-
-  // ---- Physical material properties (scalars + TSL nodes) ----
+  // Physical baselines
   mat.transmission = params.transmission;
-  if (params.transmissionMap) {
-    (mat as any).transmissionNode = tslTexture(params.transmissionMap, tslUV());
-  }
-
   mat.thickness = params.thickness;
-  if (params.thicknessMap) {
-    (mat as any).thicknessNode = tslTexture(params.thicknessMap, tslUV());
-  }
-
   mat.ior = params.ior;
   mat.clearcoat = params.clearcoat;
   mat.clearcoatRoughness = params.clearcoatRoughness;
-  if (params.clearcoatMap) {
-    (mat as any).clearcoatNode = tslTexture(params.clearcoatMap, tslUV());
-  }
-  if (params.clearcoatRoughnessMap) {
-    (mat as any).clearcoatRoughnessNode = tslTexture(
-      params.clearcoatRoughnessMap,
-      tslUV(),
-    );
-  }
-  if (params.clearcoatNormalMap) {
-    mat.clearcoatNormalMap = params.clearcoatNormalMap;
-  }
-
   mat.sheen = params.sheen;
   mat.sheenRoughness = params.sheenRoughness;
   mat.sheenColor.setRGB(
@@ -492,53 +445,16 @@ function _setStandardProperties(
     params.sheenColor[1],
     params.sheenColor[2],
   );
-  if (params.sheenColorMap) {
-    (mat as any).sheenColorNode = tslTexture(params.sheenColorMap, tslUV());
-  }
-  if (params.sheenRoughnessMap) {
-    (mat as any).sheenRoughnessNode = tslTexture(
-      params.sheenRoughnessMap,
-      tslUV(),
-    );
-  }
-
   mat.specularIntensity = params.specularIntensity;
   mat.specularColor.setRGB(
     params.specularColor[0],
     params.specularColor[1],
     params.specularColor[2],
   );
-  if (params.specularColorMap) {
-    (mat as any).specularColorNode = tslTexture(
-      params.specularColorMap,
-      tslUV(),
-    );
-  }
-  if (params.specularIntensityMap) {
-    (mat as any).specularIntensityNode = tslTexture(
-      params.specularIntensityMap,
-      tslUV(),
-    );
-  }
-
   mat.iridescence = params.iridescence;
-  if (params.iridescenceMap) {
-    (mat as any).iridescenceNode = tslTexture(params.iridescenceMap, tslUV());
-  }
   mat.iridescenceIOR = params.iridescenceIOR;
   mat.iridescenceThicknessRange = params.iridescenceThicknessRange;
-  if (params.iridescenceThicknessMap) {
-    (mat as any).iridescenceThicknessNode = tslTexture(
-      params.iridescenceThicknessMap,
-      tslUV(),
-    );
-  }
-
   mat.anisotropy = params.anisotropy;
-  if (params.anisotropyMap) {
-    (mat as any).anisotropyNode = tslTexture(params.anisotropyMap, tslUV());
-  }
-
   mat.attenuationDistance = params.attenuationDistance;
   mat.attenuationColor.setRGB(
     params.attenuationColor[0],
@@ -579,127 +495,96 @@ export function buildTSLMaterial(
 ): THREE.MeshPhysicalNodeMaterial {
   const { graph } = params;
 
-  // ------------------------------------------------------------------
-  // Shader graph path
-  // ------------------------------------------------------------------
-  if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
-    const mat = new THREE.MeshPhysicalNodeMaterial();
-    _setStandardProperties(mat, params);
-
-    const bsdf = evaluateShaderGraph(graph);
-    const baseColor: any = bsdf?.baseColor;
-    const roughnessInput: any = bsdf?.roughness;
-    const metallicInput: any = bsdf?.metallic;
-
-    // --- Resolve color node ---
-    if (baseColor) {
-      if (baseColor.__rampTexture) {
-        const marker = baseColor as RampTextureMarker;
-        if (marker.constantColor) {
-          mat.color.setRGB(
-            marker.constantColor[0],
-            marker.constantColor[1],
-            marker.constantColor[2],
-          );
-        } else {
-          mat.colorNode = tslTexture(marker.texture, tslUV()) as any;
-          mat.color.setRGB(1, 1, 1);
-        }
-      } else if (baseColor._isTSLTexture && params.map) {
-        mat.colorNode = tslTexture(params.map, tslUV()) as any;
-        mat.map = null; // clear legacy map — colorNode takes precedence
-        mat.color.setRGB(1, 1, 1);
-      } else if (typeof baseColor === "object" && !Array.isArray(baseColor)) {
-        mat.colorNode = baseColor as ReturnType<typeof vec3>;
-        mat.map = null; // clear legacy map — colorNode takes precedence
-      }
-    }
-
-    // --- Roughness: swizzle marker (SEPXYZ Y→rough) or direct texture ---
-    if (roughnessInput?._isSwizzled) {
-      const node = resolveTSLNode(roughnessInput, params.roughnessMap);
-      if (node) (mat as any).roughnessNode = node;
-    } else if (params.roughnessMap) {
-      (mat as any).roughnessNode = tslTexture(params.roughnessMap, tslUV());
-    }
-
-    // --- Metallic: swizzle marker or direct texture ---
-    if (metallicInput?._isSwizzled) {
-      const node = resolveTSLNode(metallicInput, params.metalnessMap);
-      if (node) (mat as any).metalnessNode = node;
-    } else if (params.metalnessMap) {
-      (mat as any).metalnessNode = tslTexture(params.metalnessMap, tslUV());
-    }
-
-    // --- Other maps ---
-    if (params.normalMap) mat.normalMap = params.normalMap;
-    if (params.emissiveMap) {
-      (mat as any).emissiveNode = tslTexture(params.emissiveMap, tslUV());
-    }
-
-    // --- Physical properties from shader graph ---
-    const wireMapNode = (
-      input: any,
-      map: THREE.Texture | null,
-      nodeProp: string,
-    ) => {
-      if (input?._isSwizzled) {
-        const node = resolveTSLNode(input, map);
-        if (node) (mat as any)[nodeProp] = node;
-      } else if (map) {
-        (mat as any)[nodeProp] = tslTexture(map, tslUV());
-      }
-    };
-
-    const bsdfAny = bsdf as Record<string, any> | null;
-
-    wireMapNode(
-      bsdfAny?.transmission,
-      params.transmissionMap,
-      "transmissionNode",
-    );
-    wireMapNode(bsdfAny?.clearcoat, params.clearcoatMap, "clearcoatNode");
-    wireMapNode(
-      bsdfAny?.clearcoatRoughness,
-      params.clearcoatRoughnessMap,
-      "clearcoatRoughnessNode",
-    );
-    wireMapNode(bsdfAny?.sheen, params.sheenColorMap, "sheenNode");
-    wireMapNode(
-      bsdfAny?.sheenRoughness,
-      params.sheenRoughnessMap,
-      "sheenRoughnessNode",
-    );
-    wireMapNode(bsdfAny?.sheenTint, null, "sheenColorNode");
-    wireMapNode(
-      bsdfAny?.specular,
-      params.specularIntensityMap,
-      "specularIntensityNode",
-    );
-    wireMapNode(
-      bsdfAny?.specularTint,
-      params.specularColorMap,
-      "specularColorNode",
-    );
-    wireMapNode(bsdfAny?.anisotropic, params.anisotropyMap, "anisotropyNode");
-    wireMapNode(
-      bsdfAny?.transmissionRoughness,
-      params.thicknessMap,
-      "thicknessNode",
-    );
-
-    if (bsdfAny?.ior && typeof bsdfAny.ior === "number") {
-      mat.ior = bsdfAny.ior;
-    }
-
-    return mat;
-  }
-
-  // ------------------------------------------------------------------
-  // No graph — TSL node-based MeshPhysicalNodeMaterial
-  // ------------------------------------------------------------------
   const mat = new THREE.MeshPhysicalNodeMaterial();
   _setStandardProperties(mat, params);
+
+  const bsdf = (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0)
+    ? evaluateShaderGraph(graph) as Record<string, any> | null
+    : null;
+
+  const baseColor: any = bsdf?.baseColor;
+  const roughnessInput: any = bsdf?.roughness;
+  const metallicInput: any = bsdf?.metallic;
+
+  // --- Resolve color node ---
+  if (baseColor) {
+    if (baseColor.__rampTexture) {
+      const marker = baseColor as RampTextureMarker;
+      if (marker.constantColor) {
+        mat.color.setRGB(
+          marker.constantColor[0],
+          marker.constantColor[1],
+          marker.constantColor[2],
+        );
+      } else {
+        mat.colorNode = tslTexture(marker.texture, tslUV()) as any;
+        mat.color.setRGB(1, 1, 1);
+      }
+    } else if (baseColor._isTSLTexture && params.map) {
+      mat.colorNode = tslTexture(params.map, tslUV()) as any;
+      mat.map = null;
+      mat.color.setRGB(1, 1, 1);
+    } else if (typeof baseColor === "object" && !Array.isArray(baseColor)) {
+      mat.colorNode = baseColor as ReturnType<typeof vec3>;
+      mat.map = null;
+    }
+  }
+
+  // --- Roughness: swizzle marker or direct texture ---
+  if (roughnessInput?._isSwizzled) {
+    const node = resolveTSLNode(roughnessInput, params.roughnessMap);
+    if (node) (mat as any).roughnessNode = node;
+  } else if (params.roughnessMap) {
+    (mat as any).roughnessNode = tslTexture(params.roughnessMap, tslUV());
+  }
+
+  // --- Metallic: swizzle marker or direct texture ---
+  if (metallicInput?._isSwizzled) {
+    const node = resolveTSLNode(metallicInput, params.metalnessMap);
+    if (node) (mat as any).metalnessNode = node;
+  } else if (params.metalnessMap) {
+    (mat as any).metalnessNode = tslTexture(params.metalnessMap, tslUV());
+  }
+
+  // --- Normal map ---
+  if (params.normalMap) mat.normalMap = params.normalMap;
+
+  // --- Emission ---
+  if (params.emissiveMap) {
+    (mat as any).emissiveNode = tslTexture(params.emissiveMap, tslUV());
+  }
+
+  // --- Physical properties from shader graph ---
+  const wireMapNode = (
+    input: any,
+    map: THREE.Texture | null,
+    nodeProp: string,
+  ) => {
+    if (input?._isSwizzled) {
+      const node = resolveTSLNode(input, map);
+      if (node) (mat as any)[nodeProp] = node;
+    } else if (map) {
+      (mat as any)[nodeProp] = tslTexture(map, tslUV());
+    }
+  };
+
+  if (bsdf) {
+    wireMapNode(bsdf.transmission, params.transmissionMap, "transmissionNode");
+    wireMapNode(bsdf.clearcoat, params.clearcoatMap, "clearcoatNode");
+    wireMapNode(bsdf.clearcoatRoughness, params.clearcoatRoughnessMap, "clearcoatRoughnessNode");
+    wireMapNode(bsdf.sheen, params.sheenColorMap, "sheenNode");
+    wireMapNode(bsdf.sheenRoughness, params.sheenRoughnessMap, "sheenRoughnessNode");
+    wireMapNode(bsdf.sheenTint, null, "sheenColorNode");
+    wireMapNode(bsdf.specular, params.specularIntensityMap, "specularIntensityNode");
+    wireMapNode(bsdf.specularTint, params.specularColorMap, "specularColorNode");
+    wireMapNode(bsdf.anisotropic, params.anisotropyMap, "anisotropyNode");
+    wireMapNode(bsdf.transmissionRoughness, params.thicknessMap, "thicknessNode");
+
+    if (bsdf.ior && typeof bsdf.ior === "number") {
+      mat.ior = bsdf.ior;
+    }
+  }
+
   return mat;
 }
 
