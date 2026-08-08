@@ -82,22 +82,18 @@ function getOrCreateTexture(
   name: string,
   texData: Map<string, TextureData>,
 ): THREE.Texture | null {
-  // Normalise the name for consistent matching regardless of source
-  // (graph node, flat property, or tex message header).
-  const key = slugify(name);
-
   // Already loaded and cached — return immediately.
-  const existing = _textureCache.get(key);
+  const existing = _textureCache.get(name);
   if (existing) return existing;
 
-  const texEntry = texData.get(key);
+  const texEntry = texData.get(name);
   if (!texEntry) return null;
 
   // Already loading — don't start a second load; return null until it finishes.
-  if (_loadingTextures.has(key)) return null;
+  if (_loadingTextures.has(name)) return null;
 
   // Start async image load.
-  _loadingTextures.add(key);
+  _loadingTextures.add(name);
 
   const blob = new Blob([texEntry.bytes], { type: texEntry.mime });
   const url = URL.createObjectURL(blob);
@@ -111,17 +107,17 @@ function getOrCreateTexture(
 
   img.onload = () => {
     texture.needsUpdate = true;
-    _textureCache.set(key, texture);
-    _loadedTextures.add(key);
-    _loadingTextures.delete(key);
+    _textureCache.set(name, texture);
+    _loadedTextures.add(name);
+    _loadingTextures.delete(name);
     URL.revokeObjectURL(url);
 
     // Trigger React re-render so materials are rebuilt with the now-loaded texture.
     useBlenderStore.getState().bumpTextureVersion();
   };
   img.onerror = () => {
-    console.warn(`[TSLMaterial] failed to load texture: ${key}`);
-    _loadingTextures.delete(key);
+    console.warn(`[TSLMaterial] failed to load texture: ${name}`);
+    _loadingTextures.delete(name);
     URL.revokeObjectURL(url);
   };
   img.src = url;
@@ -284,7 +280,7 @@ function evaluateNode(
         "_isTexCoord" in (vecInput as any);
       return {
         _isTSLTexture: true,
-        imageName: typeof imageName === "string" ? slugify(imageName) : imageName,
+        imageName,
         useTexCoord: !!useTexCoord,
       };
     }
@@ -437,13 +433,7 @@ function resolveTSLNode(marker: any, mapTex: THREE.Texture | null): any {
 // Graph helpers
 // ---------------------------------------------------------------------------
 
-/** Sluggish normalisation matching the Blender add-on's _slugify(). */
-function slugify(name: string): string {
-  return name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
-}
-
-/** Extract all image texture names referenced in a shader graph.
- *  Names are slugified for consistent matching with tex messages. */
+/** Extract all image texture names referenced in a shader graph. */
 export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
   if (!graph || !Array.isArray(graph.nodes)) return [];
   const names = new Set<string>();
@@ -451,21 +441,28 @@ export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
     if (node.type === "tex-image") {
       const imageSock = node.inputs.find((s) => s.name === "image");
       if (imageSock && typeof imageSock.value === "string") {
-        names.add(slugify(imageSock.value));
+        names.add(imageSock.value);
       }
     }
   }
   return [...names];
 }
 
-/** Extract all image texture names referenced in flat material properties.
- *  Names are slugified for consistent matching with tex messages. */
-export function getFlatImageNames(flat: FlatMaterialProps | undefined): string[] {
+/** Extract all image texture names referenced in flat material properties. */
+export function getFlatImageNames(
+  flat: FlatMaterialProps | undefined,
+): string[] {
   if (!flat) return [];
   const names: string[] = [];
-  for (const key of ["texture", "roughnessMap", "metalnessMap", "normalMap", "emissiveMap"] as const) {
+  for (const key of [
+    "texture",
+    "roughnessMap",
+    "metalnessMap",
+    "normalMap",
+    "emissiveMap",
+  ] as const) {
     const val = flat[key];
-    if (typeof val === "string" && val) names.push(slugify(val));
+    if (typeof val === "string" && val) names.push(val);
   }
   return names;
 }
@@ -481,9 +478,10 @@ export function buildTSLMaterial(
   const mat = new THREE.MeshPhysicalNodeMaterial();
 
   // ---- Evaluate graph ----
-  const bsdf = (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0)
-    ? evaluateShaderGraph(graph) as Record<string, any> | null
-    : null;
+  const bsdf =
+    graph && Array.isArray(graph.nodes) && graph.nodes.length > 0
+      ? (evaluateShaderGraph(graph) as Record<string, any> | null)
+      : null;
 
   // ---- Resolve textures referenced by the graph ----
   const texFromGraph = (imageName: unknown): THREE.Texture | null => {
@@ -499,7 +497,11 @@ export function buildTSLMaterial(
     if (baseColor.__rampTexture) {
       const marker = baseColor as RampTextureMarker;
       if (marker.constantColor) {
-        mat.color.setRGB(marker.constantColor[0], marker.constantColor[1], marker.constantColor[2]);
+        mat.color.setRGB(
+          marker.constantColor[0],
+          marker.constantColor[1],
+          marker.constantColor[2],
+        );
       } else {
         mat.colorNode = tslTexture(marker.texture, tslUV()) as any;
         mat.color.setRGB(1, 1, 1);
@@ -591,7 +593,11 @@ export function buildTSLMaterial(
     mat.emissiveIntensity = emissionStrength;
   } else if (!bsdf?.emissionStrength && flat && flat.emissiveIntensity > 0) {
     // Fallback: emissive from flat properties
-    mat.emissive.setRGB(flat.emissiveColor[0], flat.emissiveColor[1], flat.emissiveColor[2]);
+    mat.emissive.setRGB(
+      flat.emissiveColor[0],
+      flat.emissiveColor[1],
+      flat.emissiveColor[2],
+    );
     mat.emissiveIntensity = flat.emissiveIntensity;
   }
 
@@ -615,7 +621,10 @@ export function buildTSLMaterial(
 
   // ---- Normal map (from graph Normal input or flat properties) ----
   const normalInput: any = bsdf?.normal;
-  if (normalInput?.type === "normalMap" && typeof normalInput.color === "string") {
+  if (
+    normalInput?.type === "normalMap" &&
+    typeof normalInput.color === "string"
+  ) {
     const tex = texFromGraph(normalInput.color);
     if (tex) mat.normalMap = tex;
   } else if (!normalInput && flat?.normalMap) {
@@ -625,7 +634,11 @@ export function buildTSLMaterial(
   }
 
   // ---- Physical properties (scalars from graph) ----
-  const wireScalar = (input: any, prop: keyof THREE.MeshPhysicalNodeMaterial, fallback: number) => {
+  const wireScalar = (
+    input: any,
+    prop: keyof THREE.MeshPhysicalNodeMaterial,
+    fallback: number,
+  ) => {
     if (typeof input === "number") (mat as any)[prop] = input;
     else (mat as any)[prop] = fallback;
   };

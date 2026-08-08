@@ -87,14 +87,44 @@ export function computeMaterialCacheKey(params: BuildMaterialParams): string {
 
   if (params.flat) {
     // Include flat properties + flat texture load state in the cache key
-    const { color, roughness, metallic, emissiveColor, emissiveIntensity,
-            transparent, opacity, alphaTest, flatShading,
-            texture, roughnessMap, metalnessMap, normalMap, emissiveMap } = params.flat;
-    parts.push(JSON.stringify({
-      color, roughness, metallic, emissiveColor, emissiveIntensity,
-      transparent, opacity, alphaTest, flatShading,
-    }));
-    for (const name of [texture, roughnessMap, metalnessMap, normalMap, emissiveMap].filter(Boolean).sort()) {
+    const {
+      color,
+      roughness,
+      metallic,
+      emissiveColor,
+      emissiveIntensity,
+      transparent,
+      opacity,
+      alphaTest,
+      flatShading,
+      texture,
+      roughnessMap,
+      metalnessMap,
+      normalMap,
+      emissiveMap,
+    } = params.flat;
+    parts.push(
+      JSON.stringify({
+        color,
+        roughness,
+        metallic,
+        emissiveColor,
+        emissiveIntensity,
+        transparent,
+        opacity,
+        alphaTest,
+        flatShading,
+      }),
+    );
+    for (const name of [
+      texture,
+      roughnessMap,
+      metalnessMap,
+      normalMap,
+      emissiveMap,
+    ]
+      .filter(Boolean)
+      .sort()) {
       parts.push(`${name}:${_loadedTextures.has(name!) ? "1" : "0"}`);
     }
   }

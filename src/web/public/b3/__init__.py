@@ -151,8 +151,8 @@ def _extract_node_graph(mat):
                         val = sock.default_value
                         # Handle Image data-blocks (TEX_IMAGE node "Image" socket)
                         if hasattr(val, 'name') and hasattr(val, 'size'):
-                            # bpy.types.Image — store slugified name
-                            entry["value"] = _slugify(val.name)
+                            # bpy.types.Image — store just the name
+                            entry["value"] = val.name
                         elif hasattr(val, '__iter__') and not isinstance(val, str):
                             entry["value"] = [round(float(v), 7) for v in val]
                         elif hasattr(val, '__len__') and not isinstance(val, str):
@@ -406,17 +406,17 @@ def get_scene_data():
                     if bc:
                         tex_img = _find_image_texture(bc)
                         if tex_img:
-                            texture = _slugify(tex_img.name)
+                            texture = tex_img.name
                             color = [1.0, 1.0, 1.0]  # white — texture determines color
                         else:
                             color = list(bc.default_value)[:3]
 
                     rim = _find_image_texture(node.inputs.get('Roughness'))
-                    roughness_map = _slugify(rim.name) if rim else None
+                    roughness_map = rim.name if rim else None
                     mim = _find_image_texture(node.inputs.get('Metallic'))
-                    metalness_map = _slugify(mim.name) if mim else None
+                    metalness_map = mim.name if mim else None
                     nim = _find_image_texture(node.inputs.get('Normal'))
-                    normal_map = _slugify(nim.name) if nim else None
+                    normal_map = nim.name if nim else None
 
                     r = node.inputs.get('Roughness')
                     if r and not r.is_linked:
@@ -429,7 +429,7 @@ def get_scene_data():
                     if ec:
                         em_tex = _find_image_texture(ec)
                         if em_tex:
-                            emissive_map = _slugify(em_tex.name)
+                            emissive_map = em_tex.name
                             emissive_color = [1.0, 1.0, 1.0]  # white — texture determines color
                         else:
                             emissive_color = list(ec.default_value)[:3]
@@ -641,13 +641,13 @@ def _extract_world_hdr():
 # Material texture extraction (must run on main thread)
 # ---------------------------------------------------------------------------
 def _extract_textures():
-    """Scan **every** TEX_IMAGE node in every mesh material's node tree and
-    collect all referenced images.  This catches textures connected through
-    intermediate nodes (Mix, ColorRamp, Bump, …) and textures on non-Principled
-    shaders — i.e. every texture that is actually used in the scene.
+    """Scan all mesh objects for Image Textures connected to Principled BSDF.
+    Sends encoded image bytes (PNG / JPG / WebP) so the web viewer can use
+    THREE.TextureLoader which handles sRGB encoding correctly.
 
     Returns dict of image_name → (mime_type, bytes_data, cache_key)."""
     textures = {}
+    INPUTS = ('Base Color', 'Roughness', 'Metallic', 'Normal', 'Emission Color')
 
     for obj in bpy.context.scene.objects:
         if obj.type != 'MESH':
@@ -656,42 +656,43 @@ def _extract_textures():
         if not mat or not mat.use_nodes:
             continue
 
-        # Walk every node — grab all TEX_IMAGE nodes regardless of how they're wired
         for node in mat.node_tree.nodes:
-            if node.type != 'TEX_IMAGE':
+            if node.type != 'BSDF_PRINCIPLED':
                 continue
-            img = node.image
-            if img is None:
-                continue
+            for input_name in INPUTS:
+                sock = node.inputs.get(input_name)
+                img = _find_image_texture(sock)  # direct bpy Image reference
+                if img is None:
+                    continue
+                name = img.name
+                if name in textures:
+                    continue
 
-            name = _slugify(img.name)
-            if name in textures:
-                continue
+                # Get encoded image bytes (PNG / JPG / WebP)
+                img_bytes, mime, ext = _get_image_bytes(img)
+                if img_bytes is None:
+                    print(f"[B3Sync] WARNING: no image data for '{name}'")
+                    continue
 
-            # Get encoded image bytes (PNG / JPG / WebP)
-            img_bytes, mime, ext = _get_image_bytes(img)
-            if img_bytes is None:
-                print(f"[B3Sync] WARNING: no image data for '{name}'")
-                continue
+                w, h = img.size
+                key = f"{name}_{w}x{h}"
 
-            w, h = img.size
-            key = f"{name}_{w}x{h}"
+                # Check cache
+                with _lock:
+                    cached = _state["tex_cache"].get(name)
+                if cached is not None and cached[2] == key:
+                    textures[name] = cached
+                    continue
 
-            # Check cache
-            with _lock:
-                cached = _state["tex_cache"].get(name)
-            if cached is not None and cached[2] == key:
-                textures[name] = cached
-                continue
+                result = (mime, img_bytes, key)
+                textures[name] = result
 
-            result = (mime, img_bytes, key)
-            textures[name] = result
-
-            with _lock:
-                _state["tex_cache"][name] = result
-                for ws_set in _state["tex_sent"].values():
-                    ws_set.discard(name)
-            print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
+                with _lock:
+                    _state["tex_cache"][name] = result
+                    for ws_set in _state["tex_sent"].values():
+                        ws_set.discard(name)
+                print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
+            break
 
     # Purge stale cache entries
     with _lock:
