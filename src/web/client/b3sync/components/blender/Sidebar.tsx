@@ -1,34 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { FileManager } from "../workspace/FileManager";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
 // Sidebar — left panel with sync controls and status info
 // ---------------------------------------------------------------------------
-
-function FolderOpenIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" />
-      <path d="M2 6v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2H9.5" />
-      <path d="M2 10h5.5" />
-    </svg>
-  );
-}
 
 const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
   disconnected: { color: "bg-gray-500", label: "Disconnected" },
@@ -137,12 +116,6 @@ export function Sidebar() {
   const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
   const setCameraSyncOn = useSettingsStore((s) => s.setCameraSyncOn);
 
-  const blendPathMismatch = useBlenderStore((s) => s.blendPathMismatch);
-  const blenderFilePath = useBlenderStore((s) => s.blenderFilePath);
-  const projectBlendPath = useBlenderStore((s) => s.projectBlendPath);
-
-  const [filesOpen, setFilesOpen] = useState(false);
-
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
 
@@ -170,7 +143,7 @@ export function Sidebar() {
       <div className="p-2">
         {/* Home button */}
         <Link
-          to="/projects"
+          to="/"
           className="
           inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
           text-[10px] font-mono text-text-muted
@@ -197,27 +170,6 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <div className="p-2 flex">
-        {/* File manager button */}
-        <button
-          onClick={() => setFilesOpen(true)}
-          className="
-            flex items-center gap-1 px-2 py-1 rounded-md
-            text-[10px] text-text-muted
-            border border-border bg-surface-secondary
-            hover:text-text-secondary hover:bg-surface-tertiary
-            transition-all duration-150
-          "
-          title="Browse project files"
-        >
-          <FolderOpenIcon />
-          Virtual File Manager
-        </button>
-        {filesOpen && (
-          <FileManager open={filesOpen} onClose={() => setFilesOpen(false)} />
-        )}
-      </div>
-
       {/* ---- Body ---- */}
       <div className="flex-1 flex flex-col gap-3 px-3.5 py-3 overflow-y-auto">
         {/* Connection status */}
@@ -231,42 +183,6 @@ export function Sidebar() {
             />
             <span className="text-text-secondary">{config.label}</span>
           </div>
-
-          {blendPathMismatch && (
-            <div
-              className="
-                px-2.5 py-2 rounded-lg
-                border border-status-yellow/30 bg-status-yellow/5
-                text-[10px] leading-relaxed text-status-yellow/90
-              "
-            >
-              <div className="flex items-start gap-1.5">
-                <svg
-                  width="12" height="12" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className="shrink-0 mt-px"
-                >
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                <div className="flex-1 min-w-0">
-                  <span className="font-semibold">Blender file mismatch</span>
-                  <div className="mt-0.5 text-status-yellow/70 break-all">
-                    Connected: {blenderFilePath}
-                  </div>
-                  <div className="text-status-yellow/50 break-all">
-                    Expected: {projectBlendPath}
-                  </div>
-                  <div className="mt-1 text-status-yellow/60">
-                    Syncing is paused — save will overwrite the project with data
-                    from a different file.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Object count */}

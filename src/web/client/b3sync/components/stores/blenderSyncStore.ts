@@ -68,7 +68,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
-      setBlenderFilePath,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -135,11 +134,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       try {
         const data = JSON.parse(text);
 
-        if (data.type === "blend-file") {
-          useBlenderStore
-            .getState()
-            .setBlenderFilePath((data.path as string) ?? null);
-        } else if (data.type === "hdr") {
+        if (data.type === "hdr") {
           if (data.width > 0 && data.height > 0) {
             set({
               pendingBinary: {

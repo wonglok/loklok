@@ -34,12 +34,6 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
-  /** The .blend file path sent by Blender on connect — used to detect mismatches. */
-  blenderFilePath: string | null;
-  /** The .blend file path stored in the project save data. */
-  projectBlendPath: string | null;
-  /** True when the connected Blender file doesn't match the project's expected file. */
-  blendPathMismatch: boolean;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -53,22 +47,6 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
-  /** Called when Blender sends its .blend file path. Compares with stored path. */
-  setBlenderFilePath: (path: string | null) => void;
-  /** Set the project's expected blend path (from save data). */
-  setProjectBlendPath: (path: string | null) => void;
-
-  /** Bulk-load saved project data — all state set atomically. */
-  loadSaveData: (data: {
-    sceneData: SceneData;
-    hdrData: ImageData | null;
-    hdrIntensity: number;
-    lights: LightData[];
-    cameras: CameraData[];
-    geoBuffers: Map<string, GeoBuffer>;
-    texData: Map<string, TextureData>;
-    blenderFilePath: string | null;
-  }) => void;
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({
@@ -83,9 +61,6 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
-  blenderFilePath: null,
-  projectBlendPath: null,
-  blendPathMismatch: false,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -117,31 +92,4 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
-
-  setBlenderFilePath: (path) =>
-    set((prev) => {
-      // Compare with stored project path
-      const mismatch = !!(
-        path &&
-        prev.projectBlendPath &&
-        path !== prev.projectBlendPath
-      );
-      return { blenderFilePath: path, blendPathMismatch: mismatch };
-    }),
-
-  setProjectBlendPath: (path) =>
-    set({ projectBlendPath: path, blendPathMismatch: false }),
-
-  loadSaveData: (data) =>
-    set({
-      sceneData: data.sceneData,
-      hdrData: data.hdrData,
-      hdrIntensity: data.hdrIntensity,
-      lights: data.lights,
-      cameras: data.cameras,
-      geoBuffers: data.geoBuffers,
-      texData: data.texData,
-      projectBlendPath: data.blenderFilePath ?? null,
-      blendPathMismatch: false,
-    }),
 }));
