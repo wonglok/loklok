@@ -5,13 +5,9 @@ import { CanvasGPU } from "../../components/blender/CanvasGPU";
 import { Sidebar } from "../../components/blender/Sidebar";
 import { SyncViewer } from "../../components/blender/SyncViewer";
 import { useBlenderSyncStore } from "../../components/stores/blenderSyncStore";
-import { useSettingsStore } from "../../components/stores/settingsStore";
-import { OrbitControls } from "@react-three/drei";
 import { useEffect } from "react";
 
 export function SceneSyncEditor() {
-  const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
-
   // Connect WebSocket on mount, disconnect on unmount
   useEffect(() => {
     const disconnectFn = useBlenderSyncStore.getState().disconnect;
@@ -31,8 +27,6 @@ export function SceneSyncEditor() {
         <CanvasGPU>
           <SyncViewer />
           <CameraSync />
-
-          {!cameraSyncOn && <OrbitControls target={[0, 1, 0]} makeDefault />}
         </CanvasGPU>
       </div>
     </div>
