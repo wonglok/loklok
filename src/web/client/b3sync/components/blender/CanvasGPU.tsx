@@ -8,8 +8,6 @@ import { useState } from "react";
 import * as THREE from "three/webgpu";
 import { Canvas, extend, type ThreeToJSXElements } from "@react-three/fiber";
 import {
-  DRACOLoader,
-  GLTFLoader,
   HDRLoader,
 } from "three/examples/jsm/Addons.js";
 import { useRef } from "react";
@@ -22,12 +20,6 @@ declare module "@react-three/fiber" {
 extend(THREE as any);
 
 export const rgbeLoader = new HDRLoader();
-
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath(`/draco/`);
-
-export const glbLoader = new GLTFLoader();
-glbLoader.setDRACOLoader(dracoLoader);
 
 //
 

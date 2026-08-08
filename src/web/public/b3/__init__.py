@@ -79,8 +79,6 @@ _state = {
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
     "lights_cache": None,       # serialized lights JSON string (change detection)
     "lights_sent": set(),       # ws ids that already received current lights payload
-    "anim_glb_cache": None,     # bytes of the last-sent animation GLB (change detection)
-    "anim_glb_sent": set(),     # ws ids that already received current animation GLB
     "port": 0,            # actual port the running server is bound to (0 = none)
 }
 
@@ -899,109 +897,6 @@ def _extract_lights():
     return lights
 
 
-# ---------------------------------------------------------------------------
-# Animation GLB export (must run on main thread)
-# ---------------------------------------------------------------------------
-def _export_animation_glb():
-    """Export scene animation as a self-contained GLB binary via glTF exporter.
-
-    Temporarily selects only animated mesh objects, exports with
-    export_animations=True and export_skins=False, then reads the GLB bytes.
-    The temp file is cleaned up immediately.
-
-    Returns (header_json, glb_bytes) tuple, or None if no animated objects exist.
-    """
-    import tempfile
-    import os
-
-    scene = bpy.context.scene
-
-    # Find all mesh objects that have animation data (action or NLA tracks)
-    animated_objs = []
-    for obj in scene.objects:
-        if obj.type != 'MESH':
-            continue
-        ad = getattr(obj, "animation_data", None)
-        if ad is None:
-            continue
-        has_action = ad.action is not None
-        has_nla = ad.nla_tracks and len(ad.nla_tracks) > 0
-        if not has_action and not has_nla:
-            continue
-        animated_objs.append(obj)
-
-    if not animated_objs:
-        return None
-
-    # Remember original selection and hide state
-    original_selection = {obj: obj.select_get() for obj in scene.objects}
-    original_active = bpy.context.view_layer.objects.active
-
-    try:
-        # Deselect all, then select only animated mesh objects
-        for obj in scene.objects:
-            obj.select_set(False)
-        for obj in animated_objs:
-            obj.select_set(True)
-
-        if animated_objs:
-            bpy.context.view_layer.objects.active = animated_objs[0]
-
-        # Export to temp file
-        tmp = tempfile.NamedTemporaryFile(suffix='.glb', delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-
-        bpy.ops.export_scene.gltf(
-            filepath=tmp_path,
-            export_format='GLB',
-            export_apply=True,
-            export_skins=False,
-            export_cameras=False,
-            export_lights=False,
-            export_animations=True,
-            use_selection=True,
-        )
-
-        # Read the GLB bytes
-        with open(tmp_path, 'rb') as f:
-            glb_bytes = f.read()
-
-        if not glb_bytes:
-            return None
-
-        header = json.dumps({
-            "type": "animation-gltf",
-            "size": len(glb_bytes),
-        })
-
-        print(f"[B3Sync] Animation GLB exported: {len(glb_bytes)} bytes, "
-              f"{len(animated_objs)} object(s)")
-
-        return (header, glb_bytes)
-
-    except Exception as e:
-        print(f"[B3Sync] Animation GLB export failed: {e}")
-        return None
-
-    finally:
-        # Restore original selection
-        for obj, sel in original_selection.items():
-            try:
-                obj.select_set(sel)
-            except Exception:
-                pass
-        try:
-            bpy.context.view_layer.objects.active = original_active
-        except Exception:
-            pass
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
@@ -1019,7 +914,6 @@ async def _handler(websocket):
             _state["hdr_sent"].discard(ws_id)
             _state["scene_cams_sent"].discard(ws_id)
             _state["lights_sent"].discard(ws_id)
-            _state["anim_glb_sent"].discard(ws_id)
         print(f"[B3Sync] Client disconnected ({len(_state['clients'])} total)")
 
 
@@ -1239,31 +1133,6 @@ def _timer():
                     except RuntimeError:
                         pass
 
-            # Animation GLB — export + send once per client, re-send only on change
-            # (outside if send_cam: — animations are independent of camera sync)
-            anim_glb_result = _export_animation_glb()
-            if anim_glb_result is not None:
-                anim_header, anim_blob = anim_glb_result
-                with _lock:
-                    cached = _state["anim_glb_cache"]
-                    if cached != anim_blob:
-                        _state["anim_glb_cache"] = anim_blob
-                        _state["anim_glb_sent"].clear()
-                for ws in current:
-                    ws_id = id(ws)
-                    with _lock:
-                        if ws_id in _state["anim_glb_sent"]:
-                            continue
-                        _state["anim_glb_sent"].add(ws_id)
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            ws.send(anim_header), loop
-                        )
-                        asyncio.run_coroutine_threadsafe(
-                            ws.send(anim_blob), loop
-                        )
-                    except RuntimeError:
-                        pass
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")

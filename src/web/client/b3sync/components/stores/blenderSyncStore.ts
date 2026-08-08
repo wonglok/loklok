@@ -17,8 +17,7 @@ type PendingBinary =
       vCount: number;
       iCount: number;
       hasUVs: boolean;
-    }
-  | { kind: "anim-gltf"; size: number };
+    };
 
 // ---------------------------------------------------------------------------
 // Blender Sync Store
@@ -69,7 +68,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       setCameraData,
       setCameras,
       setLights,
-      setAnimationGlb,
     } = useBlenderStore.getState();
 
     setConnectionState("connecting");
@@ -127,8 +125,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             indices,
             uvs,
           });
-        } else if (pending.kind === "anim-gltf") {
-          useBlenderStore.getState().setAnimationGlb(event.data);
         }
         return;
       }
@@ -227,13 +223,6 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
             castShadow: !!l.castShadow,
           }));
           useBlenderStore.getState().setLights(lights);
-        } else if (data.type === "animation-gltf") {
-          set({
-            pendingBinary: {
-              kind: "anim-gltf",
-              size: data.size as number,
-            },
-          });
         } else if (Array.isArray(data.objects)) {
           useBlenderStore.getState().setSceneData(data as any);
         }
