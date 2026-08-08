@@ -23,6 +23,9 @@ type PendingBinary =
       name: string;
       boneNames: string[];
       boneParents: number[];
+      boneBindPos: number[];
+      boneBindQuat: number[];
+      boneBindScl: number[];
       boneCount: number;
       vertexCount: number;
       clipCount: number;
@@ -198,7 +201,9 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           useBlenderStore.getState().setRigData(pending.name, {
             boneNames: pending.boneNames,
             boneParents: new Int32Array(pending.boneParents),
-            invBindMatrices,
+            boneBindPos: new Float32Array(pending.boneBindPos),
+            boneBindQuat: new Float32Array(pending.boneBindQuat),
+            boneBindScl: new Float32Array(pending.boneBindScl),
             skinIndices,
             skinWeights,
             animClips,
@@ -257,6 +262,9 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
               name: data.name as string,
               boneNames: data.boneNames as string[],
               boneParents: data.boneParents as number[],
+              boneBindPos: data.boneBindPos as number[],
+              boneBindQuat: data.boneBindQuat as number[],
+              boneBindScl: data.boneBindScl as number[],
               boneCount: data.boneCount as number,
               vertexCount: data.vertexCount as number,
               clipCount: data.clipCount as number,

@@ -51,3 +51,6 @@ live.blend1
 
 dist
 
+blender-ref
+
+blender-ref/**.*

@@ -945,14 +945,38 @@ def _extract_rig_data(obj):
         else:
             bone_parents.append(-1)
 
-    # --- Inverse bind matrices (Three.js Y-up) ---
+    # --- Inverse bind matrices (Three.js Y-up, world-space) ---
     # C = Rx(-90°): [x, z, -y] for Blender Z-up → Three.js Y-up
     C = mathutils.Matrix.Rotation(-math.pi / 2, 4, 'X')
+
+    # Compute world-space bind matrix per bone
+    bone_world = [None] * bone_count
+    bone_bind_pos = []
+    bone_bind_quat = []
+    bone_bind_scl = []
+    for i, b in enumerate(bones):
+        if b.parent:
+            pi = bone_name_to_idx.get(b.parent.name, -1)
+            if pi >= 0:
+                bone_world[i] = bone_world[pi] @ b.matrix_local
+            else:
+                bone_world[i] = b.matrix_local.copy()
+        else:
+            bone_world[i] = b.matrix_local.copy()
+
+        # Decompose local bind matrix → pos/quat/scl (Y-up)
+        local_yup = C @ b.matrix_local @ C.inverted()
+        pos = local_yup.translation
+        quat = local_yup.to_quaternion()
+        scl = local_yup.to_scale()
+        bone_bind_pos.extend([pos.x, pos.y, pos.z])
+        bone_bind_quat.extend([quat.x, quat.y, quat.z, quat.w])
+        bone_bind_scl.extend([scl.x, scl.y, scl.z])
+
     inv_bind = []
-    for b in bones:
-        # bone.matrix_local is the bind pose matrix (world → bone space)
-        # We want the inverse: bone space → world
-        m = C @ b.matrix_local.inverted() @ C.inverted()
+    for i, b in enumerate(bones):
+        # World-space inverse: converts from armature-world to bone-local
+        m = C @ bone_world[i].inverted() @ C.inverted()
         # Flatten column-major (Three.js convention)
         for col in range(4):
             for row in range(4):
@@ -1050,6 +1074,9 @@ def _extract_rig_data(obj):
         "name": obj.name,
         "boneNames": bone_names,
         "boneParents": bone_parents,
+        "boneBindPos": bone_bind_pos,
+        "boneBindQuat": bone_bind_quat,
+        "boneBindScl": bone_bind_scl,
         "boneCount": bone_count,
         "vertexCount": vertex_count,
         "clipCount": clip_count,

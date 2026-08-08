@@ -369,14 +369,23 @@ export function buildSkinnedGeometryFromBuffer(
   for (let i = 0; i < rig.boneNames.length; i++) {
     const bone = new THREE.Bone();
     bone.name = rig.boneNames[i];
-    // Set inverse bind matrix from the flat 16-float matrix
-    bone.matrixAutoUpdate = false;
-    const m = new THREE.Matrix4();
-    m.fromArray(rig.invBindMatrices, i * 16);
-    // Invert: the stored matrix is inverse bind, but Bone uses
-    // matrixWorld * boneInverses internally. We set the matrixWorld
-    // to identity and let the skeleton handle binding.
-    bone.updateMatrixWorld();
+    // Set bind-pose local transform
+    bone.position.set(
+      rig.boneBindPos[i * 3],
+      rig.boneBindPos[i * 3 + 1],
+      rig.boneBindPos[i * 3 + 2],
+    );
+    bone.quaternion.set(
+      rig.boneBindQuat[i * 4],
+      rig.boneBindQuat[i * 4 + 1],
+      rig.boneBindQuat[i * 4 + 2],
+      rig.boneBindQuat[i * 4 + 3],
+    );
+    bone.scale.set(
+      rig.boneBindScl[i * 3],
+      rig.boneBindScl[i * 3 + 1],
+      rig.boneBindScl[i * 3 + 2],
+    );
     bones.push(bone);
   }
 
@@ -388,12 +397,13 @@ export function buildSkinnedGeometryFromBuffer(
     }
   }
 
-  // Calculate initial bone matrices from inverse bind
+  // Update world matrices and compute bone inverses
+  for (const bone of bones) {
+    bone.updateMatrixWorld();
+  }
   const boneInverses: THREE.Matrix4[] = [];
-  for (let i = 0; i < rig.boneNames.length; i++) {
-    const m = new THREE.Matrix4();
-    m.fromArray(rig.invBindMatrices, i * 16);
-    boneInverses.push(m);
+  for (const bone of bones) {
+    boneInverses.push(bone.matrixWorld.clone().invert());
   }
 
   const skeleton = new THREE.Skeleton(bones, boneInverses);

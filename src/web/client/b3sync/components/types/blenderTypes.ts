@@ -67,8 +67,12 @@ export interface AnimClipData {
 export interface RigBuffer {
   boneNames: string[];
   boneParents: Int32Array;
-  /** 16 floats per bone, column-major 4x4 inverse bind matrices (Three.js Y-up). */
-  invBindMatrices: Float32Array;
+  /** Bind-pose local position per bone — 3 floats each, flat array. */
+  boneBindPos: Float32Array;
+  /** Bind-pose local quaternion per bone — 4 floats each, flat array. */
+  boneBindQuat: Float32Array;
+  /** Bind-pose local scale per bone — 3 floats each, flat array. */
+  boneBindScl: Float32Array;
   /** vertexCount × 4 — up to 4 bone indices per vertex (0 = unused slot). */
   skinIndices: Uint16Array;
   /** vertexCount × 4 — corresponding weights, normalized to sum to 1. */
