@@ -445,7 +445,7 @@ export function SyncViewer() {
     }
 
     // Remove stale slots (objects that moved from instanced → single or removed)
-    for (const [name, slot] of slots) {
+    for (const [name] of slots) {
       if (!incomingNames.has(name)) {
         slots.delete(name);
       }

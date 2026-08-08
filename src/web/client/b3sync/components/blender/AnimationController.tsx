@@ -51,7 +51,7 @@ const _animatedObjectNames = new Set<string>();
 
 export function setAnimatedObjectNames(names: Set<string>) {
   _animatedObjectNames.clear();
-  for (const n of names) names.forEach((n) => _animatedObjectNames.add(n));
+  for (const n of names) _animatedObjectNames.add(n);
 }
 
 /** True when the given object is being animated AND playback is active. */
@@ -197,8 +197,6 @@ export function AnimationController() {
   }, []);
 
   // ---- Advance the mixer each frame ----
-  const scrubRef = useRef(0);
-
   useFrame((_, delta) => {
     const mixer = mixerRef.current;
     if (!mixer) return;

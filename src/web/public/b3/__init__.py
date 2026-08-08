@@ -1,5 +1,5 @@
 # Blender Add-on
-# Contributor(s): Lok Wong @wonglok831 at x.com and @wonglok at github.com
+# Contributor(s): Lok Wong @wonglok831 at x.com and github.com/wonglok
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
