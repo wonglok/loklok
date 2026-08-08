@@ -1,16 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { FileManager } from "../workspace/FileManager";
-import { AnimationControls } from "../workspace/AnimationControls";
-import {
-  getPlaybackState,
-  setPlaybackState,
-  subscribePlayback,
-  type PlaybackState,
-} from "../blender/AnimationController";
 import type { ConnectionState } from "../types/blenderTypes";
 import { Link } from "react-router-dom";
 
@@ -144,18 +137,11 @@ export function Sidebar() {
   const cameraSyncOn = useSettingsStore((s) => s.cameraSyncOn);
   const setCameraSyncOn = useSettingsStore((s) => s.setCameraSyncOn);
 
-  const animationGlb = useBlenderStore((s) => s.animationGlb);
-  const [pb, setPb] = useState<PlaybackState>(getPlaybackState());
-  useEffect(() => subscribePlayback(setPb), []);
-
   const blendPathMismatch = useBlenderStore((s) => s.blendPathMismatch);
   const blenderFilePath = useBlenderStore((s) => s.blenderFilePath);
   const projectBlendPath = useBlenderStore((s) => s.projectBlendPath);
 
   const [filesOpen, setFilesOpen] = useState(false);
-
-  const hasAnim = animationGlb !== null;
-  const isPlaying = pb.playing && pb.activeClip !== null;
 
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
@@ -179,30 +165,6 @@ export function Sidebar() {
         <span className="text-sm font-semibold tracking-wide text-text-primary flex-1">
           Sync Panel
         </span>
-
-        {hasAnim && (
-          <button
-            onClick={() => setPlaybackState({ playing: !pb.playing })}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono transition-all duration-150 ${
-              isPlaying
-                ? "text-accent border border-accent/30 bg-accent-subtle hover:bg-accent-subtle/80"
-                : "text-text-muted border border-border bg-surface-secondary hover:text-accent hover:bg-accent-subtle hover:border-accent/20"
-            }`}
-            title={isPlaying ? "Pause" : "Play"}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-              {isPlaying ? (
-                <>
-                  <rect x="5" y="4" width="5" height="16" rx="1" />
-                  <rect x="14" y="4" width="5" height="16" rx="1" />
-                </>
-              ) : (
-                <polygon points="6,3 20,12 6,21" />
-              )}
-            </svg>
-            <span className="hidden sm:inline">{isPlaying ? "Pause" : "Play"}</span>
-          </button>
-        )}
       </div>
 
       <div className="p-2">
@@ -480,8 +442,6 @@ export function Sidebar() {
               No scene cameras
             </div>
           )}
-
-          {isConnected && hasAnim && <AnimationControls />}
 
         </div>
       </div>

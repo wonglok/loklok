@@ -79,9 +79,6 @@ _state = {
     "scene_cams_sent": set(),   # ws ids that already received current scene-cameras payload
     "lights_cache": None,       # serialized lights JSON string (change detection)
     "lights_sent": set(),       # ws ids that already received current lights payload
-    "anim_glb_cache": None,     # bytes of the last-sent animation GLB (change detection)
-    "anim_glb_key": None,       # lightweight fingerprint to avoid re-exporting every tick
-    "anim_glb_sent": set(),     # ws ids that already received current animation GLB
     "port": 0,            # actual port the running server is bound to (0 = none)
 }
 
@@ -900,204 +897,6 @@ def _extract_lights():
     return lights
 
 
-# ---------------------------------------------------------------------------
-# Animation GLB export (must run on main thread)
-# ---------------------------------------------------------------------------
-def _compute_animation_key():
-    """Return a lightweight fingerprint of the current animation + skin state.
-
-    Runs fast — counts objects, actions, fcurves, and geometry stats without
-    exporting.  Includes vertex / face counts for skinned meshes so geometry
-    edits also trigger a re-export.
-    Returns None if there are no animated / skinned objects."""
-    scene = bpy.context.scene
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    parts = []
-
-    for obj in scene.objects:
-        if obj.type == 'MESH':
-            is_skinned = False
-            has_anim = False
-            ad = getattr(obj, "animation_data", None)
-            if ad is not None:
-                action = ad.action
-                if action:
-                    n_fcurves = len(action.fcurves)
-                    parts.append(f"m:{obj.name}:a:{action.name}:{n_fcurves}")
-                    has_anim = True
-                if ad.nla_tracks and len(ad.nla_tracks) > 0:
-                    parts.append(f"m:{obj.name}:nla:{len(ad.nla_tracks)}")
-                    has_anim = True
-            for mod in obj.modifiers:
-                if mod.type == 'ARMATURE' and mod.object:
-                    parts.append(f"m:{obj.name}:arm:{mod.object.name}")
-                    has_anim = True
-                    is_skinned = True
-                    break
-            # Also catch parent armature
-            if not has_anim and obj.parent and obj.parent.type == 'ARMATURE':
-                parts.append(f"m:{obj.name}:parent:{obj.parent.name}")
-                is_skinned = True
-
-            # Include geometry stats for skinned meshes so edits trigger re-export
-            if is_skinned:
-                try:
-                    eval_obj = obj.evaluated_get(depsgraph)
-                    mesh = eval_obj.to_mesh()
-                    n_verts = len(mesh.vertices)
-                    n_faces = len(mesh.polygons)
-                    parts.append(f"m:{obj.name}:geo:{n_verts}v:{n_faces}f")
-                    eval_obj.to_mesh_clear()
-                except Exception:
-                    pass
-
-        elif obj.type == 'ARMATURE':
-            ad = getattr(obj, "animation_data", None)
-            if ad is not None:
-                action = ad.action
-                if action:
-                    n_fcurves = len(action.fcurves)
-                    parts.append(f"a:{obj.name}:{action.name}:{n_fcurves}")
-                if ad.nla_tracks and len(ad.nla_tracks) > 0:
-                    parts.append(f"a:{obj.name}:nla:{len(ad.nla_tracks)}")
-
-    if not parts:
-        return None
-
-    parts.sort()
-    return "|".join(parts)
-
-
-def _export_animation_glb():
-    """Export scene animation as a self-contained GLB binary via glTF exporter.
-
-    Temporarily selects only animated mesh objects, exports with
-    export_animations=True and export_skins=False, then reads the GLB bytes.
-    The temp file is cleaned up immediately.
-
-    Returns (header_json, glb_bytes) tuple, or None if no animated objects exist.
-    """
-    import tempfile
-    import os
-
-    scene = bpy.context.scene
-
-    # Collect all objects that should be exported:
-    #   - Meshes with animation data (action / NLA)
-    #   - Meshes with armature modifiers (skinned meshes)
-    #   - Armatures with animation data
-    #   - Armatures that are the target of any skinned mesh's modifier
-    export_objs = set()
-    armature_objs = set()
-
-    for obj in scene.objects:
-        if obj.type == 'MESH':
-            ad = getattr(obj, "animation_data", None)
-            has_action = ad is not None and ad.action is not None
-            has_nla = ad is not None and ad.nla_tracks and len(ad.nla_tracks) > 0
-            has_armature = False
-
-            # Check for armature modifier (skinned mesh)
-            for mod in obj.modifiers:
-                if mod.type == 'ARMATURE' and mod.object:
-                    has_armature = True
-                    armature_objs.add(mod.object)
-                    break
-
-            if has_action or has_nla or has_armature:
-                export_objs.add(obj)
-
-        elif obj.type == 'ARMATURE':
-            ad = getattr(obj, "animation_data", None)
-            has_action = ad is not None and ad.action is not None
-            has_nla = ad is not None and ad.nla_tracks and len(ad.nla_tracks) > 0
-
-            if has_action or has_nla:
-                export_objs.add(obj)
-                armature_objs.add(obj)
-
-    # Also include armatures that are parents of animated meshes (common rig setup)
-    for obj in list(export_objs):
-        if obj.type == 'MESH' and obj.parent and obj.parent.type == 'ARMATURE':
-            armature_objs.add(obj.parent)
-
-    export_objs.update(armature_objs)
-
-    if not export_objs:
-        return None
-
-    obj_list = list(export_objs)
-    print(f"[B3Sync] Animation GLB: exporting {len(obj_list)} object(s) "
-          f"({len(armature_objs)} armature(s))")
-
-    # Remember original selection
-    original_selection = {obj: obj.select_get() for obj in scene.objects}
-    original_active = bpy.context.view_layer.objects.active
-
-    try:
-        # Deselect all, then select export objects
-        for obj in scene.objects:
-            obj.select_set(False)
-        for obj in obj_list:
-            obj.select_set(True)
-
-        if obj_list:
-            bpy.context.view_layer.objects.active = obj_list[0]
-
-        # Export to temp file
-        tmp = tempfile.NamedTemporaryFile(suffix='.glb', delete=False)
-        tmp_path = tmp.name
-        tmp.close()
-
-        bpy.ops.export_scene.gltf(
-            filepath=tmp_path,
-            export_format='GLB',
-            export_apply=True,
-            export_skins=True,
-            export_cameras=False,
-            export_lights=False,
-            export_animations=True,
-            use_selection=True,
-        )
-
-        # Read the GLB bytes
-        with open(tmp_path, 'rb') as f:
-            glb_bytes = f.read()
-
-        if not glb_bytes:
-            return None
-
-        header = json.dumps({
-            "type": "animation-gltf",
-            "size": len(glb_bytes),
-        })
-
-        print(f"[B3Sync] Animation GLB exported: {len(glb_bytes)} bytes")
-
-        return (header, glb_bytes)
-
-    except Exception as e:
-        print(f"[B3Sync] Animation GLB export failed: {e}")
-        return None
-
-    finally:
-        # Restore original selection
-        for obj, sel in original_selection.items():
-            try:
-                obj.select_set(sel)
-            except Exception:
-                pass
-        try:
-            bpy.context.view_layer.objects.active = original_active
-        except Exception:
-            pass
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-
 async def _handler(websocket):
     with _lock:
         _state["clients"].add(websocket)
@@ -1128,7 +927,6 @@ async def _handler(websocket):
             _state["hdr_sent"].discard(ws_id)
             _state["scene_cams_sent"].discard(ws_id)
             _state["lights_sent"].discard(ws_id)
-            _state["anim_glb_sent"].discard(ws_id)
         print(f"[B3Sync] Client disconnected ({len(_state['clients'])} total)")
 
 
@@ -1348,39 +1146,6 @@ def _timer():
                     except RuntimeError:
                         pass
 
-            # Animation GLB — export + send once per client, re-send only on change
-            # (outside if send_cam: — animations are independent of camera sync)
-            anim_key = _compute_animation_key()
-            if anim_key is not None:
-                with _lock:
-                    cached_key = _state["anim_glb_key"]
-                if cached_key is None or cached_key != anim_key:
-                    # Fingerprint changed — re-export
-                    anim_glb_result = _export_animation_glb()
-                    if anim_glb_result is not None:
-                        anim_header, anim_blob = anim_glb_result
-                        with _lock:
-                            _state["anim_glb_key"] = anim_key
-                            _state["anim_glb_cache"] = anim_blob
-                            _state["anim_glb_sent"].clear()
-                        for ws in current:
-                            ws_id = id(ws)
-                            with _lock:
-                                if ws_id in _state["anim_glb_sent"]:
-                                    continue
-                                _state["anim_glb_sent"].add(ws_id)
-                            try:
-                                asyncio.run_coroutine_threadsafe(
-                                    ws.send(anim_header), loop
-                                )
-                                asyncio.run_coroutine_threadsafe(
-                                    ws.send(anim_blob), loop
-                                )
-                            except RuntimeError:
-                                pass
-                else:
-                    # Fingerprint unchanged — nothing to do
-                    pass
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")
