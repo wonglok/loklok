@@ -84,9 +84,7 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
 
     // ---- message ----
     socket.onmessage = (event: MessageEvent) => {
-      console.log(JSON.parse(event.data));
-
-      // --- Binary: pixel data (HDR, texture, or geometry) ---
+      // --- Binary: pixel data (HDR, texture, geometry, or animation GLB) ---
       if (event.data instanceof ArrayBuffer) {
         const pending = get().pendingBinary;
         set({ pendingBinary: null });
