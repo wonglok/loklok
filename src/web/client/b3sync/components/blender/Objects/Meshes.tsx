@@ -210,7 +210,9 @@ export function Meshes() {
         const buf = geoBuffers.get(obj.name);
         return buf && buf.version === obj.version;
       });
-      if (allHaveGeo) _ready = true;
+      if (allHaveGeo) {
+        _ready = true;
+      }
     }
 
     // ---- Cleanup stale meshes ----
