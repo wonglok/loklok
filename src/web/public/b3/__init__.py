@@ -346,21 +346,44 @@ def get_scene_data():
             continue
 
         # --- Geometry (triangulated, Y-up converted) ---
-        eval_obj = obj.evaluated_get(depsgraph)
-        try:
-            mesh = eval_obj.to_mesh()
-        except RuntimeError:
-            continue
+        # Check for armature modifier — if present, use original mesh data
+        # (glTF convention: skinned positions are in armature space, not deformed)
+        has_armature = any(
+            m.type == 'ARMATURE' and m.object is not None
+            for m in obj.modifiers
+        )
 
-        bm = bmesh.new()
-        bm.from_mesh(mesh)
-        bmesh.ops.triangulate(bm, faces=bm.faces[:])
-        bm.verts.index_update()
+        if has_armature:
+            # Use original (undeformed) mesh so skinning works in Three.js
+            mesh = obj.data
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            bmesh.ops.triangulate(bm, faces=bm.faces[:])
+            bm.verts.index_update()
 
-        vertices = []
-        for v in bm.verts:
-            # Blender Z-up → Three.js Y-up
-            vertices.extend([v.co.x, v.co.z, -v.co.y])
+            # Transform positions to armature space (glTF convention)
+            world_mat = obj.matrix_world
+            vertices = []
+            for v in bm.verts:
+                p = world_mat @ v.co  # world space
+                # Blender Z-up → Three.js Y-up
+                vertices.extend([p.x, p.z, -p.y])
+        else:
+            eval_obj = obj.evaluated_get(depsgraph)
+            try:
+                mesh = eval_obj.to_mesh()
+            except RuntimeError:
+                continue
+
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            bmesh.ops.triangulate(bm, faces=bm.faces[:])
+            bm.verts.index_update()
+
+            vertices = []
+            for v in bm.verts:
+                # Blender Z-up → Three.js Y-up
+                vertices.extend([v.co.x, v.co.z, -v.co.y])
 
         # --- UV coordinates (per-vertex, from active UV layer) ---
         uv_layer = bm.loops.layers.uv.active
@@ -514,7 +537,8 @@ def get_scene_data():
         )
 
         bm.free()
-        eval_obj.to_mesh_clear()
+        if not has_armature:
+            eval_obj.to_mesh_clear()
 
         # --- Rig data (skeleton + skin + animation) ---
         rig_result = _extract_rig_data(obj)
@@ -945,42 +969,35 @@ def _extract_rig_data(obj):
         else:
             bone_parents.append(-1)
 
-    # --- Inverse bind matrices (Three.js Y-up, world-space) ---
-    # C = Rx(-90°): [x, z, -y] for Blender Z-up → Three.js Y-up
-    C = mathutils.Matrix.Rotation(-math.pi / 2, 4, 'X')
+    # --- Inverse bind matrices (glTF convention: armature-world-space rest pose, inverted) ---
+    # axis_basis_change: Z-up (Blender) → Y-up (Three.js): (x, y, z) → (x, z, -y)
+    axis_basis_change = mathutils.Matrix((
+        (1.0,  0.0,  0.0, 0.0),
+        (0.0,  0.0,  1.0, 0.0),
+        (0.0, -1.0,  0.0, 0.0),
+        (0.0,  0.0,  0.0, 1.0),
+    ))
+    arm_world = armature.matrix_world
 
-    # Compute world-space bind matrix per bone
-    bone_world = [None] * bone_count
+    inv_bind = []
     bone_bind_pos = []
     bone_bind_quat = []
     bone_bind_scl = []
-    for i, b in enumerate(bones):
-        if b.parent:
-            pi = bone_name_to_idx.get(b.parent.name, -1)
-            if pi >= 0:
-                bone_world[i] = bone_world[pi] @ b.matrix_local
-            else:
-                bone_world[i] = b.matrix_local.copy()
-        else:
-            bone_world[i] = b.matrix_local.copy()
+    for b in bones:
+        # glTF formula: IBM = (axis_basis @ arm_world @ bone_rest).inverted()
+        ibm = (axis_basis_change @ arm_world @ b.matrix_local).inverted_safe()
+        for col in range(4):
+            for row in range(4):
+                inv_bind.append(ibm[row][col])
 
-        # Decompose local bind matrix → pos/quat/scl (Y-up)
-        local_yup = C @ b.matrix_local @ C.inverted()
-        pos = local_yup.translation
-        quat = local_yup.to_quaternion()
-        scl = local_yup.to_scale()
+        # Bind pose: decompose bone_rest (local to parent), Y-up converted
+        rest_yup = axis_basis_change @ b.matrix_local @ axis_basis_change.inverted_safe()
+        pos = rest_yup.translation
+        quat = rest_yup.to_quaternion()
+        scl = rest_yup.to_scale()
         bone_bind_pos.extend([pos.x, pos.y, pos.z])
         bone_bind_quat.extend([quat.x, quat.y, quat.z, quat.w])
         bone_bind_scl.extend([scl.x, scl.y, scl.z])
-
-    inv_bind = []
-    for i, b in enumerate(bones):
-        # World-space inverse: converts from armature-world to bone-local
-        m = C @ bone_world[i].inverted() @ C.inverted()
-        # Flatten column-major (Three.js convention)
-        for col in range(4):
-            for row in range(4):
-                inv_bind.append(m[row][col])
 
     # --- Skin weights ---
     # Get the source mesh vertex data (not evaluated — we need original vertex groups)
@@ -1026,7 +1043,7 @@ def _extract_rig_data(obj):
     if armature.animation_data and armature.animation_data.action:
         action = armature.animation_data.action
         anim_clips.append(
-            _bake_action(action, bone_name_to_idx, C, armature)
+            _bake_action(action, bone_name_to_idx, axis_basis_change, armature)
         )
     # Also check NLA tracks
     if armature.animation_data and armature.animation_data.nla_tracks:
@@ -1034,7 +1051,7 @@ def _extract_rig_data(obj):
             for strip in nla_track.strips:
                 if strip.action:
                     anim_clips.append(
-                        _bake_action(strip.action, bone_name_to_idx, C, armature)
+                        _bake_action(strip.action, bone_name_to_idx, axis_basis_change, armature)
                     )
 
     clip_count = len(anim_clips)
@@ -1085,8 +1102,11 @@ def _extract_rig_data(obj):
     return header, blob
 
 
-def _bake_action(action, bone_name_to_idx, C, armature_obj):
+def _bake_action(action, bone_name_to_idx, axis_basis_change, armature_obj):
     """Bake a Blender Action into per-bone keyframe tracks (Three.js Y-up).
+
+    Uses the glTF approach: computes each bone's local TRS relative to its
+    exported parent in the bind-pose coordinate frame, then decomposes in Y-up.
 
     Returns a dict with name, duration, and track list.
     Each track has: boneIndex, property (0=pos,1=quat,2=scale), times, values.
@@ -1095,7 +1115,7 @@ def _bake_action(action, bone_name_to_idx, C, armature_obj):
     all_times = set()
     for fcurve in action.fcurves:
         for kp in fcurve.keyframe_points:
-            all_times.add(kp.co[0])  # co = (frame, value)
+            all_times.add(kp.co[0])
 
     if not all_times:
         return {"name": action.name, "duration": 0, "tracks": []}
@@ -1104,6 +1124,13 @@ def _bake_action(action, bone_name_to_idx, C, armature_obj):
     fps = bpy.context.scene.render.fps
     frame_start = sorted_times[0]
     duration = (sorted_times[-1] - frame_start) / fps
+
+    # Build bone rest/parent lookup
+    rest_mats = {}
+    parent_map = {}
+    for b in armature_obj.data.bones:
+        rest_mats[b.name] = b.matrix_local.copy()
+        parent_map[b.name] = b.parent.name if b.parent else None
 
     # Collect per-bone samples
     bone_samples = {name: [] for name in bone_name_to_idx}
@@ -1118,12 +1145,27 @@ def _bake_action(action, bone_name_to_idx, C, armature_obj):
             if bone_name not in eval_arm.pose.bones:
                 continue
             pose_bone = eval_arm.pose.bones[bone_name]
+            bone_rest = rest_mats.get(bone_name)
+            if bone_rest is None:
+                continue
 
-            # pose_bone.matrix_basis is the local transform from rest pose
-            mat = C @ pose_bone.matrix_basis @ C.inverted()
-            pos = mat.translation
-            quat = mat.to_quaternion()
-            scl = mat.to_scale()
+            # glTF approach: compute bone local TRS relative to exported parent
+            parent_name = parent_map.get(bone_name)
+            if parent_name and parent_name in bone_name_to_idx:
+                # Child bone: compensate for parent's current pose
+                parent_pose = eval_arm.pose.bones[parent_name]
+                parent_rest = rest_mats[parent_name]
+                rest_to_parent = parent_rest.inverted_safe() @ bone_rest
+                mat = rest_to_parent.inverted_safe() @ parent_pose.matrix.inverted_safe() @ pose_bone.matrix
+            else:
+                # Root bone or parent not exported
+                mat = bone_rest.inverted_safe() @ pose_bone.matrix
+
+            # Convert to Y-up and decompose
+            mat_yup = axis_basis_change @ mat @ axis_basis_change.inverted_safe()
+            pos = mat_yup.translation
+            quat = mat_yup.to_quaternion()
+            scl = mat_yup.to_scale()
 
             bone_samples[bone_name].append({
                 "time": time_sec,
@@ -1139,45 +1181,25 @@ def _bake_action(action, bone_name_to_idx, C, armature_obj):
             continue
         bone_idx = bone_name_to_idx[bone_name]
 
-        # Position track
         times = [s["time"] for s in samples]
-        pos_values = []
-        for s in samples:
-            pos_values.extend(s["pos"])
+        pos_vals = [v for s in samples for v in s["pos"]]
+        quat_vals = [v for s in samples for v in s["quat"]]
+        scl_vals = [v for s in samples for v in s["scl"]]
+
         tracks.append({
-            "boneIndex": bone_idx,
-            "property": 0,
-            "times": times,
-            "values": pos_values,
+            "boneIndex": bone_idx, "property": 0,
+            "times": times, "values": pos_vals,
+        })
+        tracks.append({
+            "boneIndex": bone_idx, "property": 1,
+            "times": times, "values": quat_vals,
+        })
+        tracks.append({
+            "boneIndex": bone_idx, "property": 2,
+            "times": times, "values": scl_vals,
         })
 
-        # Quaternion track
-        quat_values = []
-        for s in samples:
-            quat_values.extend(s["quat"])
-        tracks.append({
-            "boneIndex": bone_idx,
-            "property": 1,
-            "times": times,
-            "values": quat_values,
-        })
-
-        # Scale track
-        scl_values = []
-        for s in samples:
-            scl_values.extend(s["scl"])
-        tracks.append({
-            "boneIndex": bone_idx,
-            "property": 2,
-            "times": times,
-            "values": scl_values,
-        })
-
-    return {
-        "name": action.name,
-        "duration": duration,
-        "tracks": tracks,
-    }
+    return {"name": action.name, "duration": duration, "tracks": tracks}
 
 
 async def _handler(websocket):
