@@ -922,15 +922,21 @@ def _extract_animations():
 
     # action_name -> {object_name: {prop: {time_sec: [component_values]}}}
     actions = {}
+    scanned = 0
+    with_action = 0
 
     for obj in scene.objects:
+        scanned += 1
         ad = getattr(obj, "animation_data", None)
         if ad is None or ad.action is None:
             continue
 
+        with_action += 1
         action = ad.action
         action_name = action.name
         obj_name = obj.name
+        fcurve_paths = [fc.data_path for fc in action.fcurves]
+        print(f"[B3Sync] Animation: object '{obj_name}' action '{action_name}' — FCurves: {fcurve_paths}")
 
         if action_name not in actions:
             actions[action_name] = {}
@@ -940,7 +946,9 @@ def _extract_animations():
         for fcurve in action.fcurves:
             dp = fcurve.data_path
 
-            # Only handle transform properties
+            # Only handle transform properties (strip "delta_" prefix if present)
+            if dp in ("delta_location", "delta_rotation_quaternion", "delta_scale"):
+                dp = dp[6:]  # strip "delta_"
             if dp not in ("location", "rotation_quaternion", "scale"):
                 continue
 
@@ -958,6 +966,8 @@ def _extract_animations():
                 if time_sec not in prop[dp]:
                     prop[dp][time_sec] = [0.0] * comp_count
                 prop[dp][time_sec][arr_idx] = value
+
+    print(f"[B3Sync] Animation: scanned {scanned} objects, {with_action} have actions")
 
     # Convert to wire format
     clips_meta = []       # clip metadata for the JSON header
@@ -1012,8 +1022,10 @@ def _extract_animations():
             })
 
     if not clips_meta:
+        print("[B3Sync] Animation: no clips extracted (no objects with keyframe data found)")
         return None
 
+    print(f"[B3Sync] Animation: extracted {len(clips_meta)} clip(s) — {sum(len(c['channels']) for c in clips_meta)} channel(s)")
     header = json.dumps({"type": "animation", "clips": clips_meta})
 
     # Pack all float arrays into a single binary blob
