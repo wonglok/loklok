@@ -780,25 +780,90 @@ def _extract_lights():
     return lights
 
 
+# ---------------------------------------------------------------------------
+# Request handlers — respond to client resource requests
+# ---------------------------------------------------------------------------
+
+def _handle_request_geo(obj_name):
+    """Respond to a geometry request. Returns (header_json, blob_bytes) or None."""
+    _, geometry_dict = get_scene_data()
+    if obj_name in geometry_dict:
+        geo_version, v_count, i_count, has_uvs, blob = geometry_dict[obj_name]
+        header = json.dumps({
+            "type": "geo",
+            "name": obj_name,
+            "version": geo_version,
+            "vCount": v_count,
+            "iCount": i_count,
+            "hasUVs": has_uvs,
+        })
+        return (header, blob)
+    return None
+
+
+def _handle_request_tex(tex_name):
+    """Respond to a texture request. Returns (header_json, blob_bytes) or None."""
+    textures = _extract_textures()
+    if tex_name in textures:
+        mime, bytes_data, _ = textures[tex_name]
+        header = json.dumps({
+            "type": "tex",
+            "name": tex_name,
+            "mime": mime,
+        })
+        return (header, bytes_data)
+    return None
+
+
+def _handle_request_hdr():
+    """Respond to an HDR request. Returns (header_json, blob_bytes_or_None) or None."""
+    hdr = _extract_world_hdr()
+    if hdr is not None:
+        w, h, pixels_bytes, _ = hdr
+        header = json.dumps({"type": "hdr", "width": w, "height": h})
+        return (header, pixels_bytes)
+    else:
+        header = json.dumps({"type": "hdr", "width": 0, "height": 0})
+        return (header, None)
+
+
 async def _handler(websocket):
+    """Handle a client connection — responds to resource requests."""
     with _lock:
         _state["clients"].add(websocket)
     print(f"[B3Sync] Client connected ({len(_state['clients'])} total)")
 
-    # Send the .blend file path as the first message so the web client can
-    # verify it matches the project's expected source file.
-    blend_path = bpy.data.filepath
-    if blend_path:
-        try:
-            await websocket.send(json.dumps({
-                "type": "blend-file",
-                "path": blend_path,
-            }))
-        except Exception:
-            pass
-
     try:
-        await websocket.wait_closed()
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                msg_type = data.get("type", "")
+
+                if msg_type == "request-geo":
+                    obj_name = data.get("name", "")
+                    result = _handle_request_geo(obj_name)
+                    if result:
+                        header, blob = result
+                        await websocket.send(header)
+                        await websocket.send(blob)
+
+                elif msg_type == "request-tex":
+                    tex_name = data.get("name", "")
+                    result = _handle_request_tex(tex_name)
+                    if result:
+                        header, blob = result
+                        await websocket.send(header)
+                        await websocket.send(blob)
+
+                elif msg_type == "request-hdr":
+                    result = _handle_request_hdr()
+                    if result is not None:
+                        header, blob = result
+                        await websocket.send(header)
+                        if blob:
+                            await websocket.send(blob)
+            except Exception:
+                pass
     except ConnectionClosed:
         pass
     finally:
@@ -868,78 +933,24 @@ def _server_thread(port: int):
 # Timer (fires at ~5 Hz from Blender's main thread)
 # ---------------------------------------------------------------------------
 def _timer():
-    """Blender timer — sends scene data and HDR (~5 Hz), keeps panel in sync."""
+    """Blender timer — sends scene data, camera, lights, HDR intensity at ~15 Hz.
+    Binary blobs (geometry, textures, HDR) are sent on-demand via request/response."""
     try:
         with _lock:
             loop = _state["loop"]
             current = list(_state["clients"])
 
         if loop is not None and not loop.is_closed() and current:
-            # --- Scene data (JSON text) + geometry blobs (binary) ---
+            # --- Scene data (JSON only — transforms + graph, no geometry blobs) ---
             data_json, geometry_dict = get_scene_data()
 
             for ws in current:
-                ws_id = id(ws)
-
-                # Send geometry blobs FIRST so they arrive before the scene JSON
-                # that references them (WebSocket preserves per-connection ordering)
-                with _lock:
-                    if ws_id not in _state["geo_sent"]:
-                        _state["geo_sent"][ws_id] = set()
-                    geo_sent = _state["geo_sent"][ws_id]
-
-                for obj_name, (geo_version, v_count, i_count, has_uvs, blob) in geometry_dict.items():
-                    key = f"{obj_name}@{geo_version}"
-                    if key in geo_sent:
-                        continue
-                    header = json.dumps({
-                        "type": "geo",
-                        "name": obj_name,
-                        "version": geo_version,
-                        "vCount": v_count,
-                        "iCount": i_count,
-                        "hasUVs": has_uvs,
-                    })
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                        asyncio.run_coroutine_threadsafe(ws.send(blob), loop)
-                    except RuntimeError:
-                        continue
-                    geo_sent.add(key)
-
-                # Then send the lightweight scene JSON (transforms + materials only)
                 try:
                     asyncio.run_coroutine_threadsafe(ws.send(data_json), loop)
                 except RuntimeError:
                     pass
 
-            # --- World HDR (binary blob) — send once per client, no intensity ---
-            hdr = _extract_world_hdr()
-            for ws in current:
-                ws_id = id(ws)
-                with _lock:
-                    already_sent = ws_id in _state["hdr_sent"]
-                if already_sent:
-                    continue
-                if hdr is not None:
-                    w, h, pixels_bytes, _ = hdr
-                    header = json.dumps({"type": "hdr", "width": w, "height": h})
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                        asyncio.run_coroutine_threadsafe(ws.send(pixels_bytes), loop)
-                    except RuntimeError:
-                        continue
-                else:
-                    # No world HDR — tell client there's nothing
-                    header = json.dumps({"type": "hdr", "width": 0, "height": 0})
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                    except RuntimeError:
-                        continue
-                with _lock:
-                    _state["hdr_sent"].add(ws_id)
-
-            # --- World HDR intensity — send every tick (lightweight JSON) ---
+            # --- HDR intensity (lightweight JSON, every tick) ---
             hdr_intensity_msg = json.dumps({
                 "type": "hdr-intensity",
                 "value": _get_world_intensity(),
@@ -950,34 +961,10 @@ def _timer():
                 except RuntimeError:
                     continue
 
-            # --- Material textures (binary) — send once per client per texture ---
-            textures = _extract_textures()
-            for ws in current:
-                ws_id = id(ws)
-                with _lock:
-                    if ws_id not in _state["tex_sent"]:
-                        _state["tex_sent"][ws_id] = set()
-                    sent = _state["tex_sent"][ws_id]
-
-                for tex_name, (mime, bytes_data, _) in textures.items():
-                    if tex_name in sent:
-                        continue
-                    header = json.dumps({
-                        "type": "tex", "name": tex_name,
-                        "mime": mime,
-                    })
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(header), loop)
-                        asyncio.run_coroutine_threadsafe(ws.send(bytes_data), loop)
-                    except RuntimeError:
-                        continue
-                    sent.add(tex_name)
-
-            # --- Camera data (JSON) — viewport at 5 Hz, scene cameras on change ---
+            # --- Camera data (JSON) — viewport every tick, scene cameras on change ---
             with _lock:
                 send_cam = _state["camera_sync_enabled"]
             if send_cam:
-                # Viewport camera — send every frame (~5 Hz), unchanged
                 cam = _extract_viewport()
                 if cam is not None:
                     cam_json = json.dumps(cam)
@@ -987,7 +974,6 @@ def _timer():
                         except RuntimeError:
                             pass
 
-                # Scene cameras — send once per client, re-send only on change
                 cams_json = json.dumps({
                     "type": "cameras",
                     "cameras": _extract_scene_cameras(),
@@ -1008,34 +994,32 @@ def _timer():
                     except RuntimeError:
                         pass
 
-                # Scene lights — send once per client, re-send only on change
-                lights_json = json.dumps({
-                    "type": "lights",
-                    "lights": _extract_lights(),
-                })
+            # --- Scene lights — send once per client, re-send only on change ---
+            lights_json = json.dumps({
+                "type": "lights",
+                "lights": _extract_lights(),
+            })
+            with _lock:
+                cached = _state["lights_cache"]
+                if cached != lights_json:
+                    _state["lights_cache"] = lights_json
+                    _state["lights_sent"].clear()
+            for ws in current:
+                ws_id = id(ws)
                 with _lock:
-                    cached = _state["lights_cache"]
-                    if cached != lights_json:
-                        _state["lights_cache"] = lights_json
-                        _state["lights_sent"].clear()
-                for ws in current:
-                    ws_id = id(ws)
-                    with _lock:
-                        if ws_id in _state["lights_sent"]:
-                            continue
-                        _state["lights_sent"].add(ws_id)
-                    try:
-                        asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
-                    except RuntimeError:
-                        pass
+                    if ws_id in _state["lights_sent"]:
+                        continue
+                    _state["lights_sent"].add(ws_id)
+                try:
+                    asyncio.run_coroutine_threadsafe(ws.send(lights_json), loop)
+                except RuntimeError:
+                    pass
 
     except Exception as e:
         import traceback
         print(f"[B3Sync] ERROR in timer: {e}")
         traceback.print_exc()
 
-    # Always tag a redraw so the panel reflects the latest _state,
-    # even when it was changed from the background thread.
     _redraw_all()
     return 1.0 / 15.0
 

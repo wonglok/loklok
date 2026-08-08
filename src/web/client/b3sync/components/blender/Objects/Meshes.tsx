@@ -4,11 +4,13 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
 import { useThree, useFrame } from "@react-three/fiber";
 import { useBlenderStore } from "../../stores/blenderStore";
+import { useBlenderSyncStore } from "../../stores/blenderSyncStore";
 import {
   buildGeometry,
   buildMaterial,
   computeMaterialCacheKey,
 } from "../../utils/meshBuilder";
+import { getGraphImageNames } from "../../utils/tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,15 +62,16 @@ function disposeTransform(name: string): void {
 // ---------------------------------------------------------------------------
 const LERP_SMOOTH = 0.15;
 
-/** Flips to true once all objects have their geometry loaded on first sync. */
 let _ready = false;
-
 const _mat4 = new THREE.Matrix4();
+
+// Track which requests have been sent to avoid spamming
+const _requestedGeo = new Set<string>();
+const _requestedTex = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Meshes — each Blender object gets its own InstancedMesh.
-// Material properties come exclusively from the shader graph.
-// Transforms are interpolated via useFrame (lerp / slerp).
+// Requests missing geometry and textures from Blender on demand.
 // ---------------------------------------------------------------------------
 
 export function Meshes() {
@@ -80,11 +83,13 @@ export function Meshes() {
   const sceneRef = useRef<THREE.Scene | null>(scene);
   const meshesRef = useRef<Map<string, CachedMesh>>(new Map());
 
+  const send = useBlenderSyncStore((s) => s.send);
+
   useEffect(() => {
     sceneRef.current = scene;
   }, [scene]);
 
-  // ---- Build / rebuild meshes ----
+  // ---- Build / rebuild meshes, request missing resources ----
   useEffect(() => {
     const sc = sceneRef.current;
     if (!sc) return;
@@ -97,12 +102,29 @@ export function Meshes() {
 
       const geoBuf = geoBuffers.get(obj.name);
 
+      // Request geometry if missing or version mismatch
+      if ((!geoBuf || geoBuf.version !== obj.version) && !_requestedGeo.has(obj.name)) {
+        _requestedGeo.add(obj.name);
+        send({ type: "request-geo", name: obj.name });
+      }
+
+      // Request textures referenced by graph
+      const imageNames = getGraphImageNames(obj.graph);
+      for (const imgName of imageNames) {
+        if (!texData.has(imgName) && !_requestedTex.has(imgName)) {
+          _requestedTex.add(imgName);
+          send({ type: "request-tex", name: imgName });
+        }
+      }
+
+      // Skip mesh building if geometry isn't ready
+      if (!geoBuf || geoBuf.version !== obj.version) continue;
+
       // ---- Build material from graph only ----
       const matKey = computeMaterialCacheKey({ graph: obj.graph, texData });
       const material = buildMaterial({ graph: obj.graph, texData });
 
-      // ---- Version ----
-      const geoVersion = geoBuf?.version ?? "";
+      const geoVersion = geoBuf.version;
 
       // ---- Target transform ----
       const tx = getOrCreateTransform(obj.name);
@@ -126,17 +148,15 @@ export function Meshes() {
           cached = undefined;
         }
 
-        if (geoBuf && geoBuf.version === obj.version) {
-          const geo = buildGeometry(geoBuf, false);
-          const im = new THREE.InstancedMesh(geo, material, 1);
-          im.name = obj.name;
-          im.castShadow = true;
-          im.receiveShadow = true;
-          sc.add(im);
+        const geo = buildGeometry(geoBuf, false);
+        const im = new THREE.InstancedMesh(geo, material, 1);
+        im.name = obj.name;
+        im.castShadow = true;
+        im.receiveShadow = true;
+        sc.add(im);
 
-          cached = { mesh: im, geoVersion, materialKey: matKey };
-          meshes.set(obj.name, cached);
-        }
+        cached = { mesh: im, geoVersion, materialKey: matKey };
+        meshes.set(obj.name, cached);
       }
     }
 
@@ -159,7 +179,7 @@ export function Meshes() {
         disposeTransform(name);
       }
     }
-  }, [sceneData, texData, geoBuffers, scene]);
+  }, [sceneData, texData, geoBuffers, scene, send]);
 
   // ---- Per-frame interpolation ----
   useFrame(() => {

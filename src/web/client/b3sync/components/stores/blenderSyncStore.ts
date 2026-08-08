@@ -41,6 +41,8 @@ interface BlenderSyncStore {
   connect: () => void;
   /** Close the WebSocket and cancel any pending reconnect. */
   disconnect: () => void;
+  /** Send a JSON-serialisable message to the Blender add-on. No-op if not connected. */
+  send: (data: unknown) => void;
 }
 
 export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
@@ -246,6 +248,17 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       useBlenderStore.getState().setConnectionState("error");
       socket.close();
     };
+  },
+
+  // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Send
+  // ------------------------------------------------------------------
+  send: (data) => {
+    const { ws } = get();
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data));
+    }
   },
 
   // ------------------------------------------------------------------

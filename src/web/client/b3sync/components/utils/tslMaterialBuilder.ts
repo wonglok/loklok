@@ -378,6 +378,25 @@ function resolveTSLNode(marker: any, mapTex: THREE.Texture | null): any {
 }
 
 // ---------------------------------------------------------------------------
+// Graph helpers
+// ---------------------------------------------------------------------------
+
+/** Extract all image texture names referenced in a shader graph. */
+export function getGraphImageNames(graph: ShaderGraph | undefined): string[] {
+  if (!graph || !Array.isArray(graph.nodes)) return [];
+  const names = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.type === "tex-image") {
+      const imageSock = node.inputs.find((s) => s.name === "image");
+      if (imageSock && typeof imageSock.value === "string") {
+        names.add(imageSock.value);
+      }
+    }
+  }
+  return [...names];
+}
+
+// ---------------------------------------------------------------------------
 // Main builder — all material properties derived from the shader graph
 // ---------------------------------------------------------------------------
 

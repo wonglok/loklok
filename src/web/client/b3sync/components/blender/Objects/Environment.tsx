@@ -5,17 +5,32 @@ import * as THREE from "three/webgpu";
 import { useThree } from "@react-three/fiber";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import { useBlenderStore } from "../../stores/blenderStore";
+import { useBlenderSyncStore } from "../../stores/blenderSyncStore";
 
 // ---------------------------------------------------------------------------
-// Environment — applies the HDR environment map and intensity from Blender
+// Environment — applies the HDR environment map and intensity from Blender.
+// Requests HDR on connect.
 // ---------------------------------------------------------------------------
+
+let _hdrRequested = false;
 
 export function Environment() {
   const hdrData = useBlenderStore((s) => s.hdrData);
   const hdrIntensity = useBlenderStore((s) => s.hdrIntensity);
+  const connectionState = useBlenderStore((s) => s.connectionState);
 
   const scene = useThree((r) => r.scene);
   const gl = useThree((r) => r.gl);
+
+  const send = useBlenderSyncStore((s) => s.send);
+
+  // ---- Request HDR on connect ----
+  useEffect(() => {
+    if (connectionState === "connected" && !_hdrRequested) {
+      _hdrRequested = true;
+      send({ type: "request-hdr" });
+    }
+  }, [connectionState, send]);
 
   // ---- HDR environment map (only when pixel data changes) ----
   useEffect(() => {
