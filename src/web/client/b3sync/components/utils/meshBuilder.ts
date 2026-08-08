@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import type { TextureData, GeoBuffer, BlenderObject } from "../types/blenderTypes";
+import type { TextureData, GeoBuffer } from "../types/blenderTypes";
 import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
@@ -44,65 +44,6 @@ export function getOrCreateTexture(
   _textureCache.set(cacheKey, texture);
   return texture;
 }
-
-// export function buildGeometry(
-//   vertices: number[],
-//   indices: number[],
-//   uvs: number[] | null | undefined,
-//   color: [number, number, number],
-//   roughness: number,
-//   metalness: number,
-//   emissiveColor: [number, number, number],
-//   emissiveIntensity: number,
-//   map: THREE.Texture | null,
-//   roughnessMap: THREE.Texture | null,
-//   metalnessMap: THREE.Texture | null,
-//   normalMap: THREE.Texture | null,
-//   transparent?: boolean,
-//   opacity?: number,
-//   alphaTest?: number,
-// ): { geometry: THREE.BufferGeometry; material: THREE.MeshStandardMaterial } {
-//   const geo = new THREE.BufferGeometry();
-
-//   const posArray = new Float32Array(vertices);
-//   geo.setAttribute("position", new THREE.BufferAttribute(posArray, 3));
-//   geo.setIndex(indices);
-
-//   // UVs — must be set before computeTangents so tangents are built from them
-//   if (uvs && uvs.length > 0) {
-//     const uvArray = new Float32Array(uvs);
-//     geo.setAttribute("uv", new THREE.BufferAttribute(uvArray, 2));
-//   }
-
-//   geo.computeVertexNormals();
-
-//   // If a normal map is present, compute tangents for correct lighting
-//   if (normalMap) {
-//     geo.computeTangents();
-//   }
-
-//   const mat = new THREE.MeshStandardMaterial({
-//     color: new THREE.Color(color[0], color[1], color[2]),
-//     roughness,
-//     metalness,
-//     emissive: new THREE.Color(
-//       emissiveColor[0],
-//       emissiveColor[1],
-//       emissiveColor[2],
-//     ),
-//     emissiveIntensity,
-//     map,
-//     roughnessMap,
-//     metalnessMap,
-//     normalMap,
-//     flatShading: false,
-//     transparent: transparent ?? false,
-//     opacity: opacity ?? 1.0,
-//     alphaTest: alphaTest ?? 0.0,
-//   });
-//
-//   return { geometry: geo, material: mat };
-// }
 
 /** Parameters for {@link buildGeometryFromBuffer}. */
 export interface BuildGeometryParams {

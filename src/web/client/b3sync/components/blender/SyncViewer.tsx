@@ -56,7 +56,6 @@ export function SyncViewer() {
 
   const gl = useThree((r) => r.gl);
 
-
   useEffect(() => {
     //
     //
@@ -433,11 +432,7 @@ export function SyncViewer() {
             obj.quaternion[2],
             obj.quaternion[3],
           );
-          cached.mesh.scale.set(
-            obj.scale[0],
-            obj.scale[1],
-            obj.scale[2],
-          );
+          cached.mesh.scale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
         }
       }
     }
@@ -466,7 +461,6 @@ export function SyncViewer() {
         slots.delete(name);
       }
     }
-
   }, [sceneData, texData, geoBuffers]);
 
   return (
