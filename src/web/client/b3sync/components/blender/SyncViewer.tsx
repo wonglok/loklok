@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
-import { useThree, useFrame } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
 import { useBlenderStore } from "../stores/blenderStore";
 import {
   _geoMaterialCache,
@@ -56,56 +56,6 @@ export function SyncViewer() {
 
   const gl = useThree((r) => r.gl);
 
-  // ---- Lerp target state (set by Blender data, consumed by useFrame) ----
-  interface LerpTarget {
-    position: THREE.Vector3;
-    quaternion: THREE.Quaternion;
-    scale: THREE.Vector3;
-  }
-  const lerpTargetsRef = useRef<Map<string, LerpTarget>>(new Map());
-  const lerpInitializedRef = useRef<Set<string>>(new Set());
-
-  // ---- Per-frame interpolation: lerp position/scale, slerp quaternion ----
-  useFrame(() => {
-    const targets = lerpTargetsRef.current;
-    const meshes = meshesRef.current;
-    const slots = instanceSlotsRef.current;
-    const initialized = lerpInitializedRef.current;
-
-    for (const [name, target] of targets) {
-      const isNew = !initialized.has(name);
-      const factor = isNew ? 1 : 0.15;
-
-      const slot = slots.get(name);
-      if (slot) {
-        // InstancedMesh — decompose current, lerp/slerp, recompose
-        const matrix = new THREE.Matrix4();
-        slot.mesh.getMatrixAt(slot.index, matrix);
-        const pos = new THREE.Vector3();
-        const quat = new THREE.Quaternion();
-        const scl = new THREE.Vector3();
-        matrix.decompose(pos, quat, scl);
-
-        pos.lerp(target.position, factor);
-        quat.slerp(target.quaternion, factor);
-        scl.lerp(target.scale, factor);
-
-        const newMatrix = new THREE.Matrix4().compose(pos, quat, scl);
-        slot.mesh.setMatrixAt(slot.index, newMatrix);
-        slot.mesh.instanceMatrix.needsUpdate = true;
-      } else {
-        // Regular mesh — lerp transform properties directly
-        const cached = meshes.get(name);
-        if (cached) {
-          cached.mesh.position.lerp(target.position, factor);
-          cached.mesh.quaternion.slerp(target.quaternion, factor);
-          cached.mesh.scale.lerp(target.scale, factor);
-        }
-      }
-
-      if (isNew) initialized.add(name);
-    }
-  });
 
   useEffect(() => {
     //
@@ -324,7 +274,6 @@ export function SyncViewer() {
         if (needsRebuild) {
           // Remove old instanced mesh
           if (entry) {
-            // Clear slots for names that were in this group
             for (const n of entry.names) slots.delete(n);
             scene.remove(entry.mesh);
           }
@@ -366,28 +315,33 @@ export function SyncViewer() {
           instanced.set(cacheKey, entry);
         }
 
-        // Track slots & store target transforms for lerp in useFrame
+        // Track slots & set instance matrices directly
         items.forEach((item, i) => {
-          slots.set(item.obj.name, { mesh: entry!.mesh, index: i });
-          lerpTargetsRef.current.set(item.obj.name, {
-            position: new THREE.Vector3(
+          const name = item.obj.name;
+          const matrix = new THREE.Matrix4().compose(
+            new THREE.Vector3(
               item.obj.position[0],
               item.obj.position[1],
               item.obj.position[2],
             ),
-            quaternion: new THREE.Quaternion(
+            new THREE.Quaternion(
               item.obj.quaternion[0],
               item.obj.quaternion[1],
               item.obj.quaternion[2],
               item.obj.quaternion[3],
             ),
-            scale: new THREE.Vector3(
+            new THREE.Vector3(
               item.obj.scale[0],
               item.obj.scale[1],
               item.obj.scale[2],
             ),
-          });
+          );
+
+          slots.set(name, { mesh: entry!.mesh, index: i });
+          entry!.mesh.setMatrixAt(i, matrix);
         });
+
+        if (entry) entry.mesh.instanceMatrix.needsUpdate = true;
 
         // Ensure there's no stale regular mesh for any of these objects
         if (entry) {
@@ -466,21 +420,25 @@ export function SyncViewer() {
           }
         }
 
-        // Store target transform for lerp in useFrame (single mesh path)
-        lerpTargetsRef.current.set(obj.name, {
-          position: new THREE.Vector3(
+        // Set transform directly
+        if (cached) {
+          cached.mesh.position.set(
             obj.position[0],
             obj.position[1],
             obj.position[2],
-          ),
-          quaternion: new THREE.Quaternion(
+          );
+          cached.mesh.quaternion.set(
             obj.quaternion[0],
             obj.quaternion[1],
             obj.quaternion[2],
             obj.quaternion[3],
-          ),
-          scale: new THREE.Vector3(obj.scale[0], obj.scale[1], obj.scale[2]),
-        });
+          );
+          cached.mesh.scale.set(
+            obj.scale[0],
+            obj.scale[1],
+            obj.scale[2],
+          );
+        }
       }
     }
 
@@ -509,13 +467,6 @@ export function SyncViewer() {
       }
     }
 
-    // Remove stale lerp targets & initialization markers
-    for (const [name] of lerpTargetsRef.current) {
-      if (!incomingNames.has(name)) {
-        lerpTargetsRef.current.delete(name);
-        lerpInitializedRef.current.delete(name);
-      }
-    }
   }, [sceneData, texData, geoBuffers]);
 
   return (
