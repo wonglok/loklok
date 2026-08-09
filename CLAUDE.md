@@ -12,6 +12,10 @@ must always use components for react code organistaion
 
 must use svg icon instead of emoji
 
-# Python Plugin Script
+# Blender side of the Plugin (python)
 
-/src/web/public/b3/**init**.py
+src/web/public/b3
+
+# ThreeJS Side of the plugin (typescript)
+
+src/web/packages/b3-runtime/src
