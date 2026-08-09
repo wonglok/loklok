@@ -2,7 +2,7 @@
 
 import { useBlenderStore } from "../stores/blenderStore";
 import type { ConnectionState } from "../types/blenderTypes";
-import { Link } from "react-router-dom";
+// import { Link } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
 // Sidebar — left panel with sync controls and status info
@@ -111,7 +111,7 @@ export function Sidebar() {
 
       <div className="p-2">
         {/* Home button */}
-        <Link
+        {/* <Link
           to="/"
           className="
           inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
@@ -136,7 +136,7 @@ export function Sidebar() {
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
           Back
-        </Link>
+        </Link> */}
       </div>
 
       {/* ---- Body ---- */}
@@ -304,7 +304,6 @@ export function Sidebar() {
               No scene cameras
             </div>
           )}
-
         </div>
       </div>
 

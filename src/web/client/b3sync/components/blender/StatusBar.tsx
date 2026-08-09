@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+// import { Link } from "react-router-dom";
 import type { ConnectionState } from "../types/blenderTypes";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -64,7 +64,7 @@ export function StatusBar() {
 
   return (
     <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-3 px-4 py-2 bg-black/60 backdrop-blur-sm text-white text-sm font-mono">
-      <Link
+      {/* <Link
         to="/"
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded
                    border border-white/15 bg-white/5
@@ -86,7 +86,8 @@ export function StatusBar() {
           <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
         <span className="hidden sm:inline">Home</span>
-      </Link>
+      </Link> */}
+
       <span className="text-white/20">|</span>
       <div className="flex items-center gap-2">
         <span

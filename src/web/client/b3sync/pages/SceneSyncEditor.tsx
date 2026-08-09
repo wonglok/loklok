@@ -1,11 +1,11 @@
 "use client";
 
-import { CameraSync } from "../../../components/blender/CameraSync";
-import { CanvasGPU } from "../../../components/blender/CanvasGPU";
-import { Sidebar } from "../../../components/blender/Sidebar";
-import { SyncViewer } from "../../../components/blender/SyncViewer";
-import { useBlenderSyncStore } from "../../../components/stores/blenderSyncStore";
-import { useSettingsStore } from "../../../components/stores/settingsStore";
+import { CameraSync } from "../components/blender/CameraSync";
+import { CanvasGPU } from "../components/blender/CanvasGPU";
+import { Sidebar } from "../components/blender/Sidebar";
+import { SyncViewer } from "../components/blender/SyncViewer";
+import { useBlenderSyncStore } from "../components/stores/blenderSyncStore";
+import { useSettingsStore } from "../components/stores/settingsStore";
 import { useEffect } from "react";
 
 export function SceneSyncEditor() {

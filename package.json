@@ -1,5 +1,5 @@
 {
-  "name": "@wonglok831/loklok",
+  "name": "@effectnode/b3sync",
   "version": "0.1.0",
   "description": "AI‑Agent‑Optimized CLI — structured output, predictable behaviour, zero prompts",
   "type": "module",
@@ -20,6 +20,7 @@
     "src/web/public"
   ],
   "scripts": {
+    "deploy": "npm version patch; npm publish --access public;",
     "build": "tsup",
     "dev": "concurrently \" npm run dev:cli \" \" nodemon ./bin/loklok.js web --no-open\"",
     "dev:cli": "tsup --watch",
@@ -38,6 +39,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@effectnode/b3sync": "^0.0.1",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@tailwindcss/vite": "^4.3.3",
