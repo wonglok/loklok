@@ -23,7 +23,7 @@ interface ProjectStore {
   selectFolder: () => Promise<string | null>;
 }
 
-export const useProjectStore = create<ProjectStore>((set, get) => ({
+export const useProjectStore = create<ProjectStore>((set) => ({
   projects: [],
   loading: false,
   error: null,
@@ -117,4 +117,5 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return null;
     }
   },
+
 }));

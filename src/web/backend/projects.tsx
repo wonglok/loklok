@@ -2,7 +2,6 @@ import { Application } from "express";
 import fs from "node:fs";
 import { homedir } from "node:os";
 import path, { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,8 +19,7 @@ export interface Project {
 // JSON Database helpers
 // ---------------------------------------------------------------------------
 
-// const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(homedir(), "effectnode-cli", "data", "projects.json"); //path.resolve(__dirname, "..", "data", "projects.json");
+const DB_PATH = join(homedir(), "effectnode-cli", "data", "projects.json");
 
 function ensureDb(): void {
   const dir = path.dirname(DB_PATH);
@@ -42,29 +40,6 @@ function readProjects(): Project[] {
 function writeProjects(projects: Project[]): void {
   ensureDb();
   fs.writeFileSync(DB_PATH, JSON.stringify(projects, null, 2), "utf-8");
-}
-
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
-function validateFolderPath(input: string): string {
-  const resolved = path.resolve(input.trim());
-
-  // Prevent writing system paths or other dangerous locations
-  if (resolved === "/" || resolved === path.resolve("/")) {
-    throw new Error("Root directory is not allowed");
-  }
-
-  // Verify the path exists and is a directory
-  if (!fs.existsSync(resolved)) {
-    throw new Error("Selected folder does not exist");
-  }
-  if (!fs.statSync(resolved).isDirectory()) {
-    throw new Error("Selected path is not a directory");
-  }
-
-  return resolved;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,21 +82,11 @@ export async function setupProjects({ app }: { app: Application }) {
       return;
     }
 
-    let resolved = "";
-    if (folderPath && folderPath.trim()) {
-      try {
-        resolved = validateFolderPath(folderPath);
-      } catch (err: any) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-    }
-
     const now = new Date().toISOString();
     const project: Project = {
       id: crypto.randomUUID(),
       title: title.trim(),
-      folderPath: resolved,
+      folderPath: folderPath?.trim() ?? "",
       createdAt: now,
       updatedAt: now,
     };
@@ -159,17 +124,7 @@ export async function setupProjects({ app }: { app: Application }) {
     }
 
     if (folderPath !== undefined) {
-      const trimmed = folderPath.trim();
-      if (trimmed) {
-        try {
-          projects[index].folderPath = validateFolderPath(folderPath);
-        } catch (err: any) {
-          res.status(400).json({ error: err.message });
-          return;
-        }
-      } else {
-        projects[index].folderPath = "";
-      }
+      projects[index].folderPath = folderPath.trim();
     }
 
     projects[index].updatedAt = new Date().toISOString();
@@ -197,7 +152,7 @@ export async function setupProjects({ app }: { app: Application }) {
   });
 
   // -----------------------------------------------------------------------
-  // Open native folder selection dialog
+  // Open native folder selection dialog (node-file-dialog)
   // -----------------------------------------------------------------------
   app.post("/api/projects/select-folder", async (_req, res) => {
     try {
