@@ -39,8 +39,8 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 // Viewer
 // ---------------------------------------------------------------------------
 
-import { useBlenderSyncStore } from "../../components/stores/blenderSyncStore";
-import { useSettingsStore } from "../../components/stores/settingsStore";
+import { useBlenderSyncStore } from "../stores/blenderSyncStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export function BlenderConnection() {
   const disconnect = useBlenderSyncStore((s) => s.disconnect);

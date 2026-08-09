@@ -15,6 +15,6 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "src/web/packages/b3sync"],
   "exclude": ["node_modules", "dist"]
 }
