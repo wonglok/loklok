@@ -6,11 +6,8 @@ import { Sidebar } from "./components/blender/Sidebar";
 import { BlenderConnection, SyncViewer } from "./components/blender/SyncViewer";
 import { ReceiverPage } from "./pages/ReciverPage";
 
-export {
-  ReceiverPage,
-  Sidebar,
-  BlenderConnection,
-  CanvasGPU,
-  SyncViewer,
-  CameraSync,
-};
+// components
+export { Sidebar, BlenderConnection, CanvasGPU, SyncViewer, CameraSync };
+
+// pages
+export { ReceiverPage };
