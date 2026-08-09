@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { setupHealth } from "./backend/health";
 import { setupBlender } from "./backend/blender";
+import { setupProjects } from "./backend/projects";
 
 // When bundled by tsup: import.meta.url = .../dist/index.js  →  ../src/web
 // When running from source: import.meta.url = .../src/web/server.ts  →  .
@@ -31,6 +32,7 @@ export async function startServer(
 
   await setupHealth({ app });
   await setupBlender({ app });
+  await setupProjects({ app });
 
   // Resolve web directory: env override or default to bundled location
   const webDir = process.env.LOKLOK_WEB_DIR ?? WEB_DIR;
