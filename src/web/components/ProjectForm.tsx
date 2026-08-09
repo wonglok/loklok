@@ -56,12 +56,12 @@ export function ProjectForm({ project, onCancel, onSaved }: ProjectFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white border border-zinc-200 rounded-xl p-5 space-y-4 shadow-sm"
+      className="bg-white border border-[#c8ece8] rounded-xl p-5 space-y-4 shadow-sm"
     >
       <div className="space-y-2">
         <label
           htmlFor="project-title"
-          className="block text-sm font-medium text-zinc-700"
+          className="block text-sm font-medium text-[#2d5a55]"
         >
           Project Title
         </label>
@@ -71,26 +71,26 @@ export function ProjectForm({ project, onCancel, onSaved }: ProjectFormProps) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="My Project"
-          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-black placeholder-zinc-400 text-sm focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200 transition-colors"
+          className="w-full px-3 py-2 bg-white border border-[#c8ece8] rounded-lg text-[#2d5a55] placeholder-[#a3c9c3] text-sm focus:outline-none focus:border-[#81d8d0] focus:ring-1 focus:ring-[#c8ece8] transition-colors"
           autoFocus
         />
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-zinc-700">
+        <label className="block text-sm font-medium text-[#2d5a55]">
           Project Folder
         </label>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleSelectFolder}
-            className="inline-flex items-center gap-2 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-black rounded-lg text-sm transition-colors shrink-0 border border-zinc-200"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-[#f0faf8] hover:bg-[#e8f8f5] text-[#2d5a55] rounded-lg text-sm transition-colors shrink-0 border border-[#c8ece8]"
           >
             <FolderIcon className="w-4 h-4" />
             {folderPath ? "Change Folder" : "Select Folder"}
           </button>
           {folderPath && (
-            <span className="text-sm text-zinc-500 font-mono truncate">
+            <span className="text-sm text-[#6b9e97] font-mono truncate">
               {folderPath}
             </span>
           )}
@@ -103,7 +103,7 @@ export function ProjectForm({ project, onCancel, onSaved }: ProjectFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-black hover:bg-zinc-800 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#81d8d0] hover:bg-[#6ac4bc] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
         >
           {isEditing ? (
             <CheckIcon className="w-4 h-4" />
@@ -115,7 +115,7 @@ export function ProjectForm({ project, onCancel, onSaved }: ProjectFormProps) {
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-sm transition-colors border border-zinc-200"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#f0faf8] hover:bg-[#e8f8f5] text-[#6b9e97] rounded-lg text-sm transition-colors border border-[#c8ece8]"
         >
           <XIcon className="w-4 h-4" />
           Cancel
