@@ -47,7 +47,10 @@ export function registerWeb(program: Command): void {
         // Graceful shutdown
         const shutdown = (signal: string) => {
           log("info", `Received ${signal}, shutting down…`);
-          server.close(() => process.exit(0));
+          server.close(() => {
+            process.exit(0);
+          });
+          process.exit(0);
         };
         process.on("SIGINT", () => shutdown("SIGINT"));
         process.on("SIGTERM", () => shutdown("SIGTERM"));
