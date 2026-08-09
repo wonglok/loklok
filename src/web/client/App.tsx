@@ -1,12 +1,12 @@
 import { Routes, Route } from "react-router-dom";
 import Welcome from "./pages/Welcome";
-import { SceneSyncEditor } from "../packages/b3sync/pages/SceneSyncEditor";
+import { BlenderReceiver } from "./pages/BlenderReceiver";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Welcome />} />
-      <Route path="/preview" element={<SceneSyncEditor />} />
+      <Route path="/preview" element={<BlenderReceiver />} />
     </Routes>
   );
 }

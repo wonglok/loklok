@@ -22,8 +22,3 @@ export function SceneSyncEditor() {
     </div>
   );
 }
-
-export { Sidebar, CanvasGPU, CameraSync, BlenderConnection };
-//
-//
-//
