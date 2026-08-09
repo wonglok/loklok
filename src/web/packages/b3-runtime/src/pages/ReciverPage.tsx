@@ -8,7 +8,7 @@ import {
   SyncViewer,
 } from "../components/blender/SyncViewer";
 
-export function SceneSyncEditor() {
+export function ReceiverPage() {
   return (
     <div className="w-screen h-screen relative">
       <div className="w-full h-full flex">

@@ -13,8 +13,8 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
-      name: "B3Sync",
+      entry: resolve(__dirname, "src/index.tsx"),
+      name: "B3Runtime",
       fileName: (format: string) => `index.${format === "es" ? "js" : "cjs"}`,
       cssFileName: "style",
       formats: ["es", "cjs"],

@@ -1,5 +1,5 @@
 {
-  "name": "@effectnode/receiver",
+  "name": "@effectnode/b3-runtime",
   "version": "0.0.2",
   "type": "module",
   "files": [

@@ -1,12 +1,12 @@
 "use client";
 
-import { CameraSync } from "../../packages/b3sync/src/components/blender/CameraSync";
-import { CanvasGPU } from "../../packages/b3sync/src/components/blender/CanvasGPU";
-import { Sidebar } from "../../packages/b3sync/src/components/blender/Sidebar";
+import { CameraSync } from "../../packages/b3-runtime/src/components/blender/CameraSync";
+import { CanvasGPU } from "../../packages/b3-runtime/src/components/blender/CanvasGPU";
+import { Sidebar } from "../../packages/b3-runtime/src/components/blender/Sidebar";
 import {
   BlenderConnection,
   SyncViewer,
-} from "../../packages/b3sync/src/components/blender/SyncViewer";
+} from "../../packages/b3-runtime/src/components/blender/SyncViewer";
 
 export function BlenderReceiver() {
   return (
