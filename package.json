@@ -1,6 +1,6 @@
 {
   "name": "@effectnode/b3sync",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI‑Agent‑Optimized CLI — structured output, predictable behaviour, zero prompts",
   "type": "module",
   "main": "./dist/index.cjs",
