@@ -7,13 +7,14 @@ import {
   BlenderConnection,
   SyncViewer,
 } from "../components/blender/SyncViewer";
+
 export function SceneSyncEditor() {
   return (
     <div className="w-screen h-screen relative">
       <div className="w-full h-full flex">
         <Sidebar />
+        <BlenderConnection></BlenderConnection>
         <CanvasGPU>
-          <BlenderConnection></BlenderConnection>
           <SyncViewer />
           <CameraSync />
         </CanvasGPU>
