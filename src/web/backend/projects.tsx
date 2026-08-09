@@ -1,4 +1,5 @@
 import { Application } from "express";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { homedir } from "node:os";
 import path, { join } from "node:path";
@@ -152,21 +153,43 @@ export async function setupProjects({ app }: { app: Application }) {
   });
 
   // -----------------------------------------------------------------------
-  // Open native folder selection dialog (node-file-dialog)
+  // -----------------------------------------------------------------------
+  // Open native folder selection dialog
   // -----------------------------------------------------------------------
   app.post("/api/projects/select-folder", async (_req, res) => {
+    const script = `POSIX path of (choose folder with prompt "Select a project folder:")`;
+
+    // macOS: use osascript via execFile
+    if (process.platform === "darwin") {
+      execFile("osascript", ["-e", script], (err, stdout) => {
+        if (err) {
+          // User cancelled the dialog (exit code 1)
+          if (err.code === 1) {
+            res.json({ folderPath: null });
+            return;
+          }
+          console.error("Folder selection failed:", err);
+          res.status(500).json({ error: "Failed to open dialog" });
+          return;
+        }
+        const folderPath = stdout.trim();
+        // Remove trailing slash from osascript output
+        const cleaned =
+          folderPath.endsWith("/") ? folderPath.slice(0, -1) : folderPath;
+        res.json({ folderPath: cleaned || null });
+      });
+      return;
+    }
+
+    // Linux / Windows: fallback to node-file-dialog
     try {
-      // Dynamic import because node-file-dialog is CommonJS
       // @ts-ignore
       const dialog = (await import("node-file-dialog")).default;
       const dirs: string[] = await dialog({ type: "directory" });
       res.json({ folderPath: dirs[0] ?? null });
     } catch (err: any) {
-      if (
-        err?.message &&
-        (err.message.includes("Nothing selected") ||
-          err.message.includes("Error: Nothing selected"))
-      ) {
+      const msg = err?.message ?? "";
+      if (msg.includes("Nothing selected")) {
         res.json({ folderPath: null });
         return;
       }
