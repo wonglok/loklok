@@ -309,7 +309,7 @@ export function Sidebar() {
 
       {/* ---- Footer ---- */}
       <div className="px-3.5 py-2.5 border-t border-border text-[10px] text-text-muted/60">
-        BlenderTalk Sync
+        B3Sync
       </div>
     </div>
   );
