@@ -39,6 +39,30 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 // Viewer
 // ---------------------------------------------------------------------------
 
+import { useBlenderSyncStore } from "../../components/stores/blenderSyncStore";
+import { useSettingsStore } from "../../components/stores/settingsStore";
+
+export function BlenderConnection() {
+  const disconnect = useBlenderSyncStore((s) => s.disconnect);
+
+  // Hydrate persisted settings from localStorage on the client (SSR-safe)
+  const hydrate = useSettingsStore((s) => s.hydrate);
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  // Connect to Blender WebSocket on mount, disconnect on unmount
+  useEffect(() => {
+    const connectFn = useBlenderSyncStore.getState().connect;
+    connectFn();
+
+    return () => {
+      disconnect();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return <></>;
+}
 export function SyncViewer() {
   const sceneData = useBlenderStore((s) => s.sceneData);
   const hdrData = useBlenderStore((s) => s.hdrData);
