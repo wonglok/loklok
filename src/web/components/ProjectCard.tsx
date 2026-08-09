@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { Project } from "../client/stores/useProjectStore";
 import { useProjectStore } from "../client/stores/useProjectStore";
 import { ProjectForm } from "./ProjectForm";
@@ -7,6 +8,7 @@ import {
   EditIcon,
   TrashIcon,
   FolderOpenIcon,
+  ArrowRightIcon,
 } from "./Icons";
 
 interface ProjectCardProps {
@@ -65,8 +67,17 @@ export function ProjectCard({ project }: ProjectCardProps) {
         )}
       </div>
 
-      <div className="text-xs text-zinc-500">
-        Created {new Date(project.createdAt).toLocaleDateString()}
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-zinc-500">
+          Created {new Date(project.createdAt).toLocaleDateString()}
+        </div>
+        <Link
+          to={`/projects/${project.id}`}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-lg text-xs font-medium transition-colors"
+        >
+          Open
+          <ArrowRightIcon className="w-3.5 h-3.5" />
+        </Link>
       </div>
     </div>
   );
