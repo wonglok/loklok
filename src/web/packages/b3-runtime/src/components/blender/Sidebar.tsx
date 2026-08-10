@@ -223,8 +223,8 @@ export function Sidebar() {
                 onClick={connect}
                 disabled={isConnecting}
                 className="
-                  flex-1 px-2.5 py-1.5 rounded
-                  bg-accent text-white text-[11px] font-semibold
+                  flex-1 px-2.5 py-1.5 rounded flex items-center justify-center
+                  bg-accent text-white text-xs
                   hover:bg-accent-strong
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors
@@ -236,8 +236,8 @@ export function Sidebar() {
               <button
                 onClick={disconnect}
                 className="
-                  flex-1 px-2.5 py-1.5 rounded
-                  bg-status-red text-white text-[11px] font-semibold
+                  flex-1 px-2.5 py-1.5 rounded flex items-center justify-center
+                  bg-status-red text-white text-xs
                   hover:bg-status-red/80
                   transition-colors
                 "

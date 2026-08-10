@@ -10,7 +10,7 @@ import {
 
 export function ReceiverPage() {
   return (
-    <div className="w-screen h-screen relative">
+    <div className="w-full h-full relative">
       <div className="w-full h-full flex">
         <Sidebar />
         <BlenderConnection></BlenderConnection>
