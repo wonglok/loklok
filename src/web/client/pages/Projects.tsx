@@ -17,13 +17,13 @@ export function Projects() {
     <div className="min-h-screen bg-[#f5fdfc] text-[#2d5a55]">
       <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
         {/* Back */}
-        <Link
+        {/* <Link
           to="/"
           className="inline-flex items-center gap-1.5 text-sm text-[#6b9e97] hover:text-[#2fa89c] transition-colors"
         >
           <ArrowLeftIcon className="w-4 h-4" />
           Back to Home
-        </Link>
+        </Link> */}
 
         {/* Header */}
         <div className="flex items-center justify-between">

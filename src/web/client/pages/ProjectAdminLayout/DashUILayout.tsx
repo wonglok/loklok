@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 import type { Project } from "../../stores/useProjectStore";
 import { BlenderReceiver } from "../BlenderReceiver";
 import {
@@ -45,19 +45,20 @@ export interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   count?: number;
+  url?: string;
 }
 
 const mainNav: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboardIcon },
-  { label: "3D Props", icon: CubeIcon, count: 24 },
-  { label: "Environments", icon: GlobeIcon, count: 8 },
-  { label: "Avatars", icon: UserIcon, count: 12 },
-  { label: "Media", icon: ImageIcon, count: 47 },
+  { label: "Dashboard", icon: LayoutDashboardIcon, url: "" },
+  { label: "3D Props", icon: CubeIcon, count: 24, url: "props" },
+  { label: "Environments", icon: GlobeIcon, count: 8, url: "environments" },
+  { label: "Avatars", icon: UserIcon, count: 12, url: "avatars" },
+  { label: "Media", icon: ImageIcon, count: 47, url: "media" },
 ];
 
 const bottomNav: NavItem[] = [
-  { label: "Blender Receiver", icon: RadioIcon },
-  { label: "Storage", icon: HardDriveIcon },
+  { label: "Blender Receiver", icon: RadioIcon, url: "receiver" },
+  { label: "Storage", icon: HardDriveIcon, url: "storage" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -72,10 +73,21 @@ interface DashboardLayoutProps {
 // ---------------------------------------------------------------------------
 export function DashUILayout({ children }: DashboardLayoutProps) {
   const { projectID } = useParams<{ projectID: string }>();
+  const location = useLocation();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeNav, setActiveNav] = useState("Dashboard");
+
+  // Derive active nav from the current route
+  const activeNav = (() => {
+    const path = location.pathname;
+    const base = `/projects/${projectID}`;
+    if (path === base || path === `${base}/`) return "Dashboard";
+    for (const item of [...mainNav, ...bottomNav]) {
+      if (item.url && path === `${base}/${item.url}`) return item.label;
+    }
+    return "Dashboard";
+  })();
 
   useEffect(() => {
     async function load() {
@@ -199,16 +211,13 @@ export function DashUILayout({ children }: DashboardLayoutProps) {
             {mainNav.map((item) => {
               const Icon = item.icon;
               const active = activeNav === item.label;
-              return (
-                <button
-                  key={item.label}
-                  onClick={() => setActiveNav(item.label)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left ${
-                    active
-                      ? `${t.sidebarActive} text-white`
-                      : `${t.sidebarText} ${t.sidebarHover}`
-                  }`}
-                >
+              const navClasses = `w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left ${
+                active
+                  ? `${t.sidebarActive} text-white`
+                  : `${t.sidebarText} ${t.sidebarHover}`
+              }`;
+              const inner = (
+                <>
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="flex-1">{item.label}</span>
                   {item.count !== undefined && (
@@ -222,6 +231,19 @@ export function DashUILayout({ children }: DashboardLayoutProps) {
                       {item.count}
                     </span>
                   )}
+                </>
+              );
+              return item.url !== undefined ? (
+                <Link
+                  key={item.label}
+                  to={`/projects/${projectID}/${item.url}`}
+                  className={navClasses}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <button key={item.label} className={navClasses}>
+                  {inner}
                 </button>
               );
             })}
@@ -233,16 +255,22 @@ export function DashUILayout({ children }: DashboardLayoutProps) {
             {bottomNav.map((item) => {
               const Icon = item.icon;
               const active = activeNav === item.label;
-              return (
-                <button
+              const navClasses = `w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left ${
+                active
+                  ? `${t.sidebarActive} text-white`
+                  : `${t.sidebarText} ${t.sidebarHover}`
+              }`;
+              return item.url !== undefined ? (
+                <Link
                   key={item.label}
-                  onClick={() => setActiveNav(item.label)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left ${
-                    active
-                      ? `${t.sidebarActive} text-white`
-                      : `${t.sidebarText} ${t.sidebarHover}`
-                  }`}
+                  to={`/projects/${projectID}/${item.url}`}
+                  className={navClasses}
                 >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </Link>
+              ) : (
+                <button key={item.label} className={navClasses}>
                   <Icon className="w-4 h-4 shrink-0" />
                   <span>{item.label}</span>
                 </button>
