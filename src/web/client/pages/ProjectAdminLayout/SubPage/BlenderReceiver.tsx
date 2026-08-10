@@ -18,6 +18,11 @@ export function BlenderReceiver() {
           <CameraSync />
         </CanvasGPU>
       </div>
+      <div className=" absolute top-0 left-0">
+        {/*  */}
+        {/*  */}
+        {/*  */}
+      </div>
     </div>
   );
 }
