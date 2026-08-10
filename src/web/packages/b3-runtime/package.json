@@ -48,6 +48,7 @@
     "@types/node": "^26.2.0",
     "@types/three": "^0.185.4",
     "autoprefixer": "^10.5.4",
+    "draco3d": "^1.5.7",
     "meshoptimizer": "^1.2.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3"
