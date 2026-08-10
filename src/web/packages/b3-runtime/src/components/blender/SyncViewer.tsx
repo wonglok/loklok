@@ -101,13 +101,6 @@ export function SyncViewer() {
 
   const gl = useThree((r) => r.gl);
 
-  useEffect(() => {
-    //
-    //
-  }, []);
-  //
-  //
-
   // ------------------------------------------------------------------
   // Apply HDR environment map (only when pixel data changes)
   // ------------------------------------------------------------------
