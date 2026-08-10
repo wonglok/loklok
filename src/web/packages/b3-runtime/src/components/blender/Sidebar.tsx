@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { useBlenderSyncStore } from "../stores/blenderSyncStore";
 import type { ConnectionState } from "../types/blenderTypes";
-// import { Link } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
-// Sidebar — left panel with sync controls and status info
+// Sidebar — left panel with sync controls, port config, and status info
 // ---------------------------------------------------------------------------
 
 const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
@@ -19,23 +21,23 @@ const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
 // SVG icons
 // ---------------------------------------------------------------------------
 
-// function CameraIcon() {
-//   return (
-//     <svg
-//       width="16"
-//       height="16"
-//       viewBox="0 0 24 24"
-//       fill="none"
-//       stroke="currentColor"
-//       strokeWidth="2"
-//       strokeLinecap="round"
-//       strokeLinejoin="round"
-//     >
-//       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-//       <circle cx="12" cy="13" r="4" />
-//     </svg>
-//   );
-// }
+function CameraIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  );
+}
 
 function CubeIcon() {
   return (
@@ -74,6 +76,25 @@ function RadioIcon() {
   );
 }
 
+function RefreshIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
@@ -85,8 +106,38 @@ export function Sidebar() {
   const selectedCamera = useBlenderStore((s) => s.selectedCamera);
   const selectCamera = useBlenderStore((s) => s.selectCamera);
 
+  const port = useSettingsStore((s) => s.port);
+  const setPort = useSettingsStore((s) => s.setPort);
+
+  const connect = useBlenderSyncStore((s) => s.connect);
+  const disconnect = useBlenderSyncStore((s) => s.disconnect);
+  const hardRefresh = useBlenderSyncStore((s) => s.hardRefresh);
+
+  const [portInput, setPortInput] = useState(String(port));
+  const [portDirty, setPortDirty] = useState(false);
+
+  const handlePortSave = () => {
+    const num = parseInt(portInput, 10);
+    if (num > 0 && num <= 65535) {
+      setPort(num);
+      setPortDirty(false);
+    } else {
+      setPortInput(String(port));
+      setPortDirty(false);
+    }
+  };
+
+  const handlePortKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handlePortSave();
+    if (e.key === "Escape") {
+      setPortInput(String(port));
+      setPortDirty(false);
+    }
+  };
+
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
+  const isConnecting = connectionState === "connecting";
 
   return (
     <div
@@ -105,52 +156,110 @@ export function Sidebar() {
           <RadioIcon />
         </span>
         <span className="text-sm font-semibold tracking-wide text-text-primary flex-1">
-          B3-Sync
+          Blender System
         </span>
-      </div>
-
-      <div className="p-2">
-        {/* Home button */}
-        {/* <Link
-          to="/"
-          className="
-          inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md
-          text-[10px] font-mono text-text-muted
-          bg-surface-primary/90 backdrop-blur-sm border border-border
-          hover:text-text-primary hover:bg-surface-secondary
-          transition-all duration-150
-        "
-          title="Home"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
-          Back
-        </Link> */}
       </div>
 
       {/* ---- Body ---- */}
       <div className="flex-1 flex flex-col gap-3 px-3.5 py-3 overflow-y-auto">
-        {/* Connection status */}
+        {/* Port configuration */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-text-muted">
+            Port
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              value={portInput}
+              onChange={(e) => {
+                setPortInput(e.target.value);
+                setPortDirty(e.target.value !== String(port));
+              }}
+              onKeyDown={handlePortKeyDown}
+              onBlur={handlePortSave}
+              disabled={isConnected}
+              className="
+                w-full px-2 py-1.5 rounded
+                bg-surface-secondary border border-border
+                text-text-primary text-xs font-mono
+                focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20
+                disabled:opacity-50 disabled:cursor-not-allowed
+                transition-colors
+                [appearance:textfield]
+                [&::-webkit-outer-spin-button]:appearance-none
+                [&::-webkit-inner-spin-button]:appearance-none
+              "
+              placeholder="8765"
+            />
+            {portDirty && !isConnected && (
+              <button
+                onClick={handlePortSave}
+                className="shrink-0 px-2 py-1.5 rounded bg-accent text-white text-[10px] font-semibold hover:bg-accent-strong transition-colors"
+              >
+                Apply
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Connection controls */}
         <div className="space-y-1.5">
           <div className="text-[10px] uppercase tracking-widest text-text-muted">
             Connection
           </div>
+
+          {/* Status indicator */}
           <div className="flex items-center gap-2">
             <span
               className={`inline-block w-2 h-2 rounded-full shrink-0 ${config.color}`}
             />
             <span className="text-text-secondary">{config.label}</span>
+          </div>
+
+          {/* Connect / Disconnect + Hard Refresh */}
+          <div className="flex gap-1.5">
+            {!isConnected ? (
+              <button
+                onClick={connect}
+                disabled={isConnecting}
+                className="
+                  flex-1 px-2.5 py-1.5 rounded
+                  bg-accent text-white text-[11px] font-semibold
+                  hover:bg-accent-strong
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  transition-colors
+                "
+              >
+                {isConnecting ? "Connecting…" : "Connect"}
+              </button>
+            ) : (
+              <button
+                onClick={disconnect}
+                className="
+                  flex-1 px-2.5 py-1.5 rounded
+                  bg-status-red text-white text-[11px] font-semibold
+                  hover:bg-status-red/80
+                  transition-colors
+                "
+              >
+                Disconnect
+              </button>
+            )}
+            <button
+              onClick={hardRefresh}
+              disabled={!isConnected}
+              className="
+                shrink-0 px-2 py-1.5 rounded
+                bg-surface-secondary border border-border
+                text-text-secondary text-[11px]
+                hover:bg-surface-tertiary hover:text-text-primary
+                disabled:opacity-40 disabled:cursor-not-allowed
+                transition-colors
+              "
+              title="Disconnect, clear all scene data, reconnect"
+            >
+              <RefreshIcon />
+            </button>
           </div>
         </div>
 
@@ -309,7 +418,7 @@ export function Sidebar() {
 
       {/* ---- Footer ---- */}
       <div className="px-3.5 py-2.5 border-t border-border text-[10px] text-text-muted/60">
-        B3Sync
+        B3Sync :{port}
       </div>
     </div>
   );
