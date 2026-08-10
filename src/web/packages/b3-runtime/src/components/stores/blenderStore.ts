@@ -47,7 +47,6 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
-
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({

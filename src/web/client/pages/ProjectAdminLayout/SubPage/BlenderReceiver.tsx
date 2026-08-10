@@ -5,6 +5,7 @@ import { CanvasGPU } from "../../../../packages/b3-runtime/src/components/blende
 // import { Sidebar } from "../../packages/b3-runtime/src/components/blender/Sidebar";
 import {
   BlenderConnection,
+  RefreshButton,
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/SyncViewer";
 import { useBlenderSyncStore } from "../../../../packages/b3-runtime/src/components/stores/blenderSyncStore";
@@ -21,16 +22,7 @@ export function BlenderReceiver() {
       </div>
       <div className=" absolute top-0 left-0">
         <div className="">
-          <button
-            onClick={() => {
-              //
-              //
-              useBlenderSyncStore.getState().refresh();
-            }}
-            className="block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1"
-          >
-            Refresh
-          </button>
+          <RefreshButton></RefreshButton>
           <button className="block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1">
             Import to 3D Envrionment
           </button>
