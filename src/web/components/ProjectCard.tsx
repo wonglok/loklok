@@ -64,7 +64,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
         {project.folderPath ? (
           <>
             <FolderOpenIcon className="w-4 h-4 text-[#a3c9c3] shrink-0" />
-            <span className="truncate font-mono text-xs">{project.folderPath}</span>
+            <span className="truncate font-mono text-xs">
+              {project.folderPath}
+            </span>
           </>
         ) : (
           <>
