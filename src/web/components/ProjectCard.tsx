@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { Project } from "../client/stores/useProjectStore";
 import { useProjectStore } from "../client/stores/useProjectStore";
 import { ProjectForm } from "./ProjectForm";
+import { ConfirmModal } from "./ConfirmModal";
 import {
   FolderIcon,
   EditIcon,
@@ -17,7 +18,13 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project }: ProjectCardProps) {
   const [editing, setEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteProject = useProjectStore((s) => s.deleteProject);
+
+  const handleDelete = () => {
+    deleteProject(project.id);
+    setShowDeleteConfirm(false);
+  };
 
   if (editing) {
     return (
@@ -44,7 +51,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <EditIcon className="w-4 h-4" />
           </button>
           <button
-            onClick={() => deleteProject(project.id)}
+            onClick={() => setShowDeleteConfirm(true)}
             className="p-2 rounded-lg text-[#6b9e97] hover:text-red-500 hover:bg-red-50 transition-colors"
             title="Delete project"
           >
@@ -79,6 +86,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <ArrowRightIcon className="w-3.5 h-3.5" />
         </Link>
       </div>
+
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="Delete Project"
+        message={`Are you sure you want to delete "${project.title}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

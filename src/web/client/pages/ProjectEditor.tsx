@@ -23,7 +23,8 @@ const tiffany = {
   subtle: "text-[#a3c9c3]",
   panelBg: "bg-[#f0faf8]",
   panelBorder: "border-[#d4eeea]",
-  input: "bg-white border-[#c8ece8] focus:border-[#81d8d0] focus:ring-[#c8ece8]",
+  input:
+    "bg-white border-[#c8ece8] focus:border-[#81d8d0] focus:ring-[#c8ece8]",
   hover: "hover:bg-[#e8f8f5]",
 };
 
@@ -54,19 +55,16 @@ export function ProjectEditor() {
     load();
   }, [projectID]);
 
-  const onMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (resizing.current === "right") {
-        const w = window.innerWidth - e.clientX;
-        setRightWidth(Math.max(200, Math.min(500, w)));
-      }
-      if (resizing.current === "bottom") {
-        const h = window.innerHeight - e.clientY;
-        setBottomHeight(Math.max(120, Math.min(400, h)));
-      }
-    },
-    [],
-  );
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    if (resizing.current === "right") {
+      const w = window.innerWidth - e.clientX;
+      setRightWidth(Math.max(200, Math.min(500, w)));
+    }
+    if (resizing.current === "bottom") {
+      const h = window.innerHeight - e.clientY;
+      setBottomHeight(Math.max(120, Math.min(400, h)));
+    }
+  }, []);
 
   const onMouseUp = useCallback(() => {
     resizing.current = null;
@@ -95,7 +93,9 @@ export function ProjectEditor() {
 
   if (loading) {
     return (
-      <div className={`w-screen h-screen ${tiffany.bg} flex items-center justify-center`}>
+      <div
+        className={`w-screen h-screen ${tiffany.bg} flex items-center justify-center`}
+      >
         <p className={`text-sm ${tiffany.muted}`}>Loading project...</p>
       </div>
     );
@@ -103,7 +103,9 @@ export function ProjectEditor() {
 
   if (error || !project) {
     return (
-      <div className={`w-screen h-screen ${tiffany.bg} flex items-center justify-center`}>
+      <div
+        className={`w-screen h-screen ${tiffany.bg} flex items-center justify-center`}
+      >
         <div className="text-center space-y-3">
           <p className={`text-sm ${tiffany.muted}`}>
             {error || "Project not found"}
@@ -125,7 +127,9 @@ export function ProjectEditor() {
   // -------------------------------------------------------------------
 
   return (
-    <div className={`w-screen h-screen ${tiffany.bg} flex flex-col overflow-hidden`}>
+    <div
+      className={`w-screen h-screen ${tiffany.bg} flex flex-col overflow-hidden`}
+    >
       {/* ================================================================= */}
       {/* Top bar */}
       {/* ================================================================= */}
@@ -161,7 +165,10 @@ export function ProjectEditor() {
       {/* ================================================================= */}
       {/* Body: left + main + right sidebar */}
       {/* ================================================================= */}
-      <div className="flex-1 flex overflow-hidden" style={{ height: `calc(100vh - 2.75rem - ${bottomHeight}px)` }}>
+      <div
+        className="flex-1 flex overflow-hidden"
+        style={{ height: `calc(100vh - 2.75rem - ${bottomHeight}px)` }}
+      >
         {/* Left toolbar strip */}
         <aside
           className={`shrink-0 w-12 ${tiffany.panelBg} ${tiffany.panelBorder} border-r flex flex-col items-center py-2 gap-1`}
@@ -183,7 +190,9 @@ export function ProjectEditor() {
         {/* Main workspace */}
         <main className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-2">
-            <div className={`w-16 h-16 mx-auto rounded-2xl ${tiffany.panelBg} ${tiffany.panelBorder} border flex items-center justify-center`}>
+            <div
+              className={`w-16 h-16 mx-auto rounded-2xl ${tiffany.panelBg} ${tiffany.panelBorder} border flex items-center justify-center`}
+            >
               <FolderOpenIcon className={`w-7 h-7 ${tiffany.subtle}`} />
             </div>
             <p className={`text-sm ${tiffany.muted}`}>Project workspace</p>
@@ -194,10 +203,7 @@ export function ProjectEditor() {
         </main>
 
         {/* Right properties panel */}
-        <div
-          className="shrink-0 flex"
-          style={{ width: rightWidth }}
-        >
+        <div className="shrink-0 flex" style={{ width: rightWidth }}>
           {/* Resize handle */}
           <div
             className={`w-1 cursor-col-resize ${tiffany.panelBorder} border-l hover:bg-[#81d8d0]/30 transition-colors`}
@@ -210,7 +216,9 @@ export function ProjectEditor() {
             <div className="p-3 space-y-4">
               {/* Project info */}
               <div className="space-y-2">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${tiffany.accentText}`}>
+                <h3
+                  className={`text-xs font-semibold uppercase tracking-wider ${tiffany.accentText}`}
+                >
                   Project
                 </h3>
                 <div className="space-y-1.5">
@@ -219,13 +227,19 @@ export function ProjectEditor() {
                     <p className={`text-sm ${tiffany.text}`}>{project.title}</p>
                   </div>
                   <div>
-                    <label className={`text-xs ${tiffany.subtle}`}>Folder</label>
-                    <p className={`text-xs ${tiffany.muted} font-mono truncate`}>
+                    <label className={`text-xs ${tiffany.subtle}`}>
+                      Folder
+                    </label>
+                    <p
+                      className={`text-xs ${tiffany.muted} font-mono truncate`}
+                    >
                       {project.folderPath || "—"}
                     </p>
                   </div>
                   <div>
-                    <label className={`text-xs ${tiffany.subtle}`}>Created</label>
+                    <label className={`text-xs ${tiffany.subtle}`}>
+                      Created
+                    </label>
                     <p className={`text-xs ${tiffany.muted}`}>
                       {new Date(project.createdAt).toLocaleDateString()}
                     </p>
@@ -237,12 +251,12 @@ export function ProjectEditor() {
 
               {/* Properties placeholder */}
               <div className="space-y-2">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${tiffany.accentText}`}>
+                <h3
+                  className={`text-xs font-semibold uppercase tracking-wider ${tiffany.accentText}`}
+                >
                   Properties
                 </h3>
-                <p className={`text-xs ${tiffany.subtle}`}>
-                  No item selected
-                </p>
+                <p className={`text-xs ${tiffany.subtle}`}>No item selected</p>
               </div>
             </div>
           </aside>
