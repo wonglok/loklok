@@ -42,7 +42,9 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 import { useBlenderSyncStore } from "../stores/blenderSyncStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
-export function RefreshButton() {
+export function RefreshButton({
+  className = "block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1",
+}) {
   let connectionState = useBlenderStore((r) => r.connectionState);
   return (
     <>
@@ -51,7 +53,7 @@ export function RefreshButton() {
           //
           useBlenderSyncStore.getState().refresh();
         }}
-        className="block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1"
+        className={className}
       >
         Refresh{" "}
         {connectionState === "connected" ? `[Connected]` : `[Disconnected]`}
