@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useBlenderStore } from "../stores/blenderStore";
 import {
   _geoMaterialCache,
@@ -165,12 +165,16 @@ export function SyncViewer() {
       switch (l.type) {
         case "POINT": {
           const pt = new THREE.PointLight(color, intensity, l.distance || 0);
+          pt.castShadow = true;
+          pt.receiveShadow = true;
           if (l.distance && l.distance > 0) pt.decay = 2;
           threeLight = pt;
           break;
         }
         case "SUN": {
           threeLight = new THREE.DirectionalLight(color, intensity);
+          threeLight.castShadow = true;
+          threeLight.receiveShadow = true;
           break;
         }
         case "SPOT": {
@@ -198,7 +202,6 @@ export function SyncViewer() {
       }
 
       threeLight.name = l.name;
-      threeLight.castShadow = !!l.castShadow;
       threeLight.position.set(l.position[0], l.position[1], l.position[2]);
       threeLight.quaternion.set(
         l.quaternion[0],
@@ -206,6 +209,8 @@ export function SyncViewer() {
         l.quaternion[2],
         l.quaternion[3],
       );
+      threeLight.castShadow = true;
+      threeLight.receiveShadow = true;
 
       scene.add(threeLight);
       lightsRef.current.push(threeLight);

@@ -41,6 +41,7 @@ export const CanvasGPU: any = ({ children }: { children?: any }) => {
     <>
       <div className="w-full h-full relative" ref={ref}>
         <Canvas
+          shadows
           //
           // dpr={[1, dpr]}
           // shadows="soft"
@@ -66,8 +67,7 @@ export const CanvasGPU: any = ({ children }: { children?: any }) => {
 
             renderer.setPixelRatio(window.devicePixelRatio);
 
-            renderer.shadowMap.type = THREE.PCFShadowMap;
-            renderer.shadowMap.transmitted = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.shadowMap.enabled = true;
 
             await renderer.compileAsync(

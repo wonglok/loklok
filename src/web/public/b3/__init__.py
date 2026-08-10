@@ -334,18 +334,51 @@ def get_scene_data():
     geometry_dict = {}
 
     for obj in bpy.context.scene.objects:
-        if obj.type != 'MESH':
-            continue
-
         # Skip objects hidden in the viewport (eye icon, hidden collections, etc.)
         if not obj.visible_get(view_layer=view_layer):
             continue
 
-        # --- Geometry (triangulated, Y-up converted) ---
+        # ------------------------------------------------------------------
+        # Transform (all object types)
+        # ------------------------------------------------------------------
+        orig_mode = obj.rotation_mode
+        obj.rotation_mode = 'QUATERNION'
+        pos = obj.location
+        q = obj.rotation_quaternion
+        s = obj.scale
+        obj.rotation_mode = orig_mode
+
+        # ------------------------------------------------------------------
+        # Base object data (all types)
+        # ------------------------------------------------------------------
+        obj_data = {
+            "name":       obj.name,
+            "objectType": obj.type,
+            "position":   [pos.x, pos.z, -pos.y],
+            "quaternion": [q.x,   q.z,   -q.y,   q.w],
+            "scale":      [s.x,   s.z,    s.y],
+        }
+
+        # --- Empty-specific metadata ---
+        if obj.type == 'EMPTY':
+            obj_data["emptyDisplayType"] = obj.empty_display_type  # 'PLAIN_AXES', 'CUBE', 'SPHERE', etc.
+
+        # ------------------------------------------------------------------
+        # Non-mesh objects: just transforms + type marker, no geometry
+        # ------------------------------------------------------------------
+        if obj.type != 'MESH':
+            data["objects"].append(obj_data)
+            continue
+
+        # ==================================================================
+        # Geometry (triangulated, Y-up converted) — MESH only below here
+        # ==================================================================
         eval_obj = obj.evaluated_get(depsgraph)
         try:
             mesh = eval_obj.to_mesh()
         except RuntimeError:
+            # Mesh failed to evaluate — still include transform-only data
+            data["objects"].append(obj_data)
             continue
 
         bm = bmesh.new()
@@ -512,19 +545,8 @@ def get_scene_data():
         bm.free()
         eval_obj.to_mesh_clear()
 
-        # --- Transform ---
-        orig_mode = obj.rotation_mode
-        obj.rotation_mode = 'QUATERNION'
-        pos = obj.location
-        q = obj.rotation_quaternion
-        s = obj.scale
-        obj.rotation_mode = orig_mode
-
-        obj_data = {
-            "name":              obj.name,
-            "position":          [pos.x, pos.z, -pos.y],
-            "quaternion":        [q.x,   q.z,   -q.y,   q.w],
-            "scale":             [s.x,   s.z,    s.y],
+        # Merge material + geometry fields into obj_data
+        obj_data.update({
             "color":             color,
             "roughness":         roughness,
             "metalness":         metallic,
@@ -535,7 +557,7 @@ def get_scene_data():
             "alphaTest":         alpha_test,
             "flatShading":       flat_shading,
             "version":           version,
-        }
+        })
         if texture:
             obj_data["texture"] = texture
         if roughness_map:
