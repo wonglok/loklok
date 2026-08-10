@@ -7,8 +7,8 @@ import { ProjectEditor } from "./pages/ProjectEditor";
 export default function App() {
   return (
     <Routes>
-      <Route path="/projects" element={<Projects />} />
       <Route path="/" element={<Intro />} />
+      <Route path="/projects" element={<Projects />} />
       <Route path="/preview" element={<BlenderReceiver />} />
       <Route path="/projects/:projectID" element={<ProjectEditor />} />
     </Routes>

@@ -2,7 +2,7 @@ export default function Intro() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold tracking-tight">⚡ loklok</h1>
+        <h1 className="text-4xl font-bold tracking-tight">⚡ effectnode</h1>
         <p className="text-zinc-400 text-lg">AI‑Agent‑Optimized CLI</p>
         <div className="flex gap-3 justify-center mt-6">
           <a
