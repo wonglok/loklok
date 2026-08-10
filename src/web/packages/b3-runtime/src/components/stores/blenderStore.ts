@@ -47,6 +47,8 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
+  /** Reset all scene data back to initial empty state. */
+  clearAll: () => void;
 }
 
 export const useBlenderStore = create<BlenderStore>((set) => ({
@@ -92,4 +94,17 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   selectCamera: (cam) => set({ selectedCamera: cam }),
 
   setLights: (next) => set({ lights: next }),
+
+  clearAll: () =>
+    set({
+      sceneData: { objects: [] },
+      hdrData: null,
+      hdrIntensity: 1.0,
+      texData: new Map(),
+      geoBuffers: new Map(),
+      cameraData: null,
+      cameras: [],
+      selectedCamera: null,
+      lights: [],
+    }),
 }));
