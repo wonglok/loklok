@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBlenderSyncStore } from "../stores/blenderSyncStore";
+import { downloadGLB } from "../utils/exportGLB";
 import type { ConnectionState } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
@@ -261,6 +262,28 @@ export function Sidebar() {
               <RefreshIcon />
             </button>
           </div>
+        </div>
+
+        {/* Export */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-text-muted">
+            Export
+          </div>
+          <button
+            onClick={downloadGLB}
+            disabled={!isConnected}
+            className="
+              w-full px-2.5 py-1.5 rounded
+              bg-surface-secondary border border-border
+              text-text-secondary text-[11px] font-semibold
+              hover:bg-surface-tertiary hover:text-text-primary
+              disabled:opacity-40 disabled:cursor-not-allowed
+              transition-colors
+            "
+            title="Download scene as GLB (glTF Binary)"
+          >
+            Download GLB
+          </button>
         </div>
 
         {/* Object count */}
