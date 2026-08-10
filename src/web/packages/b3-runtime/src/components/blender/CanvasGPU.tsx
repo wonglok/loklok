@@ -7,9 +7,7 @@
 import { useState } from "react";
 import * as THREE from "three/webgpu";
 import { Canvas, extend, type ThreeToJSXElements } from "@react-three/fiber";
-import {
-  HDRLoader,
-} from "three/examples/jsm/Addons.js";
+import { HDRLoader } from "three/examples/jsm/Addons.js";
 import { useRef } from "react";
 
 declare module "@react-three/fiber" {

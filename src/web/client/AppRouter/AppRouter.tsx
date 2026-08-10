@@ -1,9 +1,12 @@
 import { Routes, Route } from "react-router-dom";
 import Intro from "../pages/Welcome";
 import { Projects } from "../pages/Projects";
-import { ProjectEditor } from "../pages/ProjectEditor";
+//
+//
+//
 import { DashUILayout } from "../pages/ProjectAdminLayout/DashUILayout";
-import { SubPage } from "../pages/ProjectAdminLayout/SubPage";
+import { SubPage } from "../pages/ProjectAdminLayout/SubPage/SubPage";
+import { BlenderReceiver } from "../pages/ProjectAdminLayout/SubPage/BlenderReceiver";
 
 export function AppRouter() {
   return (
@@ -62,7 +65,15 @@ export function AppRouter() {
           </DashUILayout>
         }
       />
-      <Route path="/projects/:projectID/receiver" element={<DashUILayout />} />
+      <Route
+        path="/projects/:projectID/receiver"
+        element={
+          <DashUILayout>
+            {/*  */}
+            {<BlenderReceiver />}
+          </DashUILayout>
+        }
+      />
       <Route
         path="/projects/:projectID/storage"
         element={
@@ -71,7 +82,7 @@ export function AppRouter() {
           </DashUILayout>
         }
       />
-      <Route path="/projects/:projectID/editor" element={<ProjectEditor />} />
+      {/* <Route path="/projects/:projectID/editor" element={<ProjectEditor />} /> */}
     </Routes>
   );
 }

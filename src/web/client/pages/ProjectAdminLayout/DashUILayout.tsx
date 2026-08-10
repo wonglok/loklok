@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams, useLocation } from "react-router-dom";
 import type { Project } from "../../stores/useProjectStore";
-import { BlenderReceiver } from "../BlenderReceiver";
+import { BlenderReceiver } from "./SubPage/BlenderReceiver";
 import {
   ArrowLeftIcon,
   CubeIcon,
@@ -283,13 +283,13 @@ export function DashUILayout({ children }: DashboardLayoutProps) {
         {/* Main content area */}
         {/* ================================================================= */}
         <main className="flex-1 overflow-y-auto">
-          {activeNav === "Blender Receiver" ? (
+          {children}
+          {/* {activeNav === "Blender Receiver" ? (
             <div className="w-full h-full">
               <BlenderReceiver />
             </div>
           ) : (
-            children
-          )}
+          )} */}
         </main>
       </div>
     </div>
