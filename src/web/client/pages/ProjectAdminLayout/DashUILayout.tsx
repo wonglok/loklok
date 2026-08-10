@@ -50,6 +50,7 @@ export interface NavItem {
 
 const mainNav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboardIcon, url: "" },
+  { label: "Blender Receiver", icon: RadioIcon, url: "receiver" },
   { label: "3D Props", icon: CubeIcon, count: 24, url: "props" },
   { label: "Environments", icon: GlobeIcon, count: 8, url: "environments" },
   { label: "Avatars", icon: UserIcon, count: 12, url: "avatars" },
@@ -57,7 +58,6 @@ const mainNav: NavItem[] = [
 ];
 
 const bottomNav: NavItem[] = [
-  { label: "Blender Receiver", icon: RadioIcon, url: "receiver" },
   { label: "Storage", icon: HardDriveIcon, url: "storage" },
 ];
 
