@@ -41,6 +41,8 @@ interface BlenderSyncStore {
   connect: () => void;
   /** Close the WebSocket and cancel any pending reconnect. */
   disconnect: () => void;
+  /** Request the Blender add-on to re-send all current scene data. */
+  refresh: () => void;
 }
 
 export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
@@ -263,5 +265,16 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
       set({ ws: null, pendingBinary: null });
     }
     useBlenderStore.getState().setConnectionState("disconnected");
+  },
+
+  // ------------------------------------------------------------------
+  // Refresh
+  // ------------------------------------------------------------------
+  refresh: () => {
+    get().disconnect();
+    // Small delay so the OS releases the port before we reconnect
+    setTimeout(() => {
+      get().connect();
+    }, 500);
   },
 }));

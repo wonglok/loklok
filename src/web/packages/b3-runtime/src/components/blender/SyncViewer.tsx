@@ -63,6 +63,7 @@ export function BlenderConnection() {
 
   return <></>;
 }
+
 export function SyncViewer() {
   const sceneData = useBlenderStore((s) => s.sceneData);
   const hdrData = useBlenderStore((s) => s.hdrData);

@@ -58,7 +58,7 @@ const mainNav: NavItem[] = [
 ];
 
 const bottomNav: NavItem[] = [
-  { label: "Settings", icon: HardDriveIcon, url: "storage" },
+  { label: "Settings", icon: HardDriveIcon, url: "settings" },
 ];
 
 // ---------------------------------------------------------------------------

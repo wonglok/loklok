@@ -75,10 +75,10 @@ export function AppRouter() {
         }
       />
       <Route
-        path="/projects/:projectID/storage"
+        path="/projects/:projectID/settings"
         element={
           <DashUILayout>
-            <SubPage title="Storage" description="Project storage overview" />
+            <SubPage title="Settings" description="Settings page" />
           </DashUILayout>
         }
       />
