@@ -10,7 +10,7 @@ import {
 
 export function BlenderReceiver() {
   return (
-    <div className="w-screen h-screen relative">
+    <div className="relative w-full h-full">
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
         <CanvasGPU>
