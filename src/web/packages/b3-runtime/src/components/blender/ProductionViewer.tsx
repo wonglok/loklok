@@ -260,8 +260,16 @@ async function loadProductionScene(
 
   // Build meshes
   for (const obj of sceneData.objects) {
-    const geo = geometryMap.get(obj.name);
-    if (!geo) continue;
+    // Use the canonical geometry name when instancing is active,
+    // fall back to object name for non-instanced scenes.
+    const geoName: string = (obj as any).geometry ?? obj.name;
+    const geo = geometryMap.get(geoName);
+    if (!geo) {
+      console.warn(
+        `[ProductionViewer] Geometry "${geoName}" not found for "${obj.name}"`,
+      );
+      continue;
+    }
 
     const opacity = obj.opacity ?? 1;
     const alphaTest = obj.alphaTest ?? 0;
