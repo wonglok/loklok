@@ -565,7 +565,6 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
         </Suspense>
-        {/* <Environment preset="lobby" background /> */}
       </Canvas>
     </div>
   );
