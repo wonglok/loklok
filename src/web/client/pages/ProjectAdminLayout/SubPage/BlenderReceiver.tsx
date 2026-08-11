@@ -21,7 +21,7 @@ export function BlenderReceiver() {
             className="text-xs flex items-center justify-center"
             style={{ height: "20px" }}
           >
-            Blender Canvas
+            Blender Canvas ⬇️
           </div>
           <div className="w-full" style={{ height: `calc(50% - 20px)` }}>
             <CanvasGPU>
@@ -33,7 +33,7 @@ export function BlenderReceiver() {
             className="text-xs flex items-center justify-center"
             style={{ height: `calc(20px)` }}
           >
-            Production Canvas
+            Production Canvas ⬇️
           </div>
           <div
             className="w-full border-t border-border"
@@ -133,3 +133,10 @@ function OutputPreview() {
   // Ready — render production view
   return <ProductionViewer zipBuffer={zipBuffer} />;
 }
+
+//
+//
+//
+//
+//
+//
