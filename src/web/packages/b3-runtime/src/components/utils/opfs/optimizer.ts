@@ -6,12 +6,14 @@
 //
 // Optimisation pipeline:
 //   1. Textures    → WebP re-encode (via OffscreenCanvas, universal support)
-//   2. HDR         → Tonemapped WebP preview (Reinhard + gamma)
+//   2. HDR         → KTX2 (GPU-native, full HDR via UASTC)
 //   3. Geometry    → Draco-compressed .bin (via draco3d WASM)
 //   4. Scene JSON  → Copy-through with updated references
 // ---------------------------------------------------------------------------
 
 import draco3d from "draco3d";
+import { DataTexture, RGBAFormat, FloatType } from "three";
+import { KTX2Exporter } from "three/addons/exporters/KTX2Exporter.js";
 
 import type {
   HdrConfig,
@@ -137,60 +139,26 @@ function computeScaledSize(
 }
 
 // ---------------------------------------------------------------------------
-// HDR → LDR tonemap (Reinhard) for WebP preview
+// HDR → KTX2 (GPU-native, full dynamic range via UASTC)
 // ---------------------------------------------------------------------------
 
-function tonemapReinhard(
-  r: number,
-  g: number,
-  b: number,
-): [number, number, number] {
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const mapped = luminance / (1.0 + luminance);
-  const scale = luminance > 0 ? mapped / luminance : 0;
-  return [r * scale, g * scale, b * scale];
-}
-
-function linearToSRGB(channel: number): number {
-  if (channel <= 0.0031308) return 12.92 * channel;
-  return 1.055 * Math.pow(channel, 1.0 / 2.4) - 0.055;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-async function hdrToWebP(
+async function hdrToKTX2(
   pixels: ArrayBuffer,
   width: number,
   height: number,
-  intensity: number,
-): Promise<{ blob: Blob; mime: string }> {
+): Promise<Uint8Array> {
   const floats = new Float32Array(pixels);
-  const rgba = new Uint8ClampedArray(width * height * 4);
 
-  for (let i = 0; i < width * height; i++) {
-    const r = floats[i * 4] * intensity;
-    const g = floats[i * 4 + 1] * intensity;
-    const b = floats[i * 4 + 2] * intensity;
+  // DataTexture from the raw Float32 RGBA pixels — no tonemap needed
+  const texture = new DataTexture(floats, width, height, RGBAFormat, FloatType);
+  texture.needsUpdate = true;
 
-    const [tr, tg, tb] = tonemapReinhard(r, g, b);
+  const exporter = new KTX2Exporter();
+  const ktx2 = await exporter.parse(texture);
 
-    rgba[i * 4] = Math.round(clamp(linearToSRGB(tr), 0, 1) * 255);
-    rgba[i * 4 + 1] = Math.round(clamp(linearToSRGB(tg), 0, 1) * 255);
-    rgba[i * 4 + 2] = Math.round(clamp(linearToSRGB(tb), 0, 1) * 255);
-    rgba[i * 4 + 3] = 255;
-  }
+  texture.dispose();
 
-  const imageData = new ImageData(rgba, width, height);
-  const bitmap = await createImageBitmap(imageData);
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
-
-  const blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.82 });
-  return { blob, mime: "image/webp" };
+  return ktx2;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,7 +257,7 @@ export class OpfsOptimiser {
   /**
    * Run the full optimisation pipeline:
    *   1. Textures → WebP
-   *   2. HDR → tonemapped WebP
+   *   2. HDR → KTX2 (UASTC, full HDR)
    *   3. Geometry → Draco
    *   4. Cameras, lights, scene JSON copy-through
    */
@@ -362,17 +330,16 @@ export class OpfsOptimiser {
 
       try {
         const hdrOutDir = await ensureDir(outRoot, "hdr");
-        const { blob, mime } = await hdrToWebP(
+        const ktx2 = await hdrToKTX2(
           hdrPixels,
           hdrConfig.width,
           hdrConfig.height,
-          hdrConfig.intensity,
         );
-        await writeBinary(hdrOutDir, "data.webp", await blob.arrayBuffer());
+        await writeBinary(hdrOutDir, "data.ktx2", ktx2.buffer as ArrayBuffer);
         await writeJSON(hdrOutDir, "config.json", {
           ...hdrConfig,
-          format: mime,
-          tonemapped: true,
+          format: "image/ktx2",
+          encoding: "uastc-hdr",
         });
       } catch (err) {
         console.warn("[OPFS Optimiser] HDR skipped:", err);
