@@ -218,9 +218,9 @@ async function compressGeometryDraco(
   // Encode
   const encodedData = new mod.DracoInt8Array();
   const encodedLen = encoder.EncodeMeshToDracoBuffer(mesh, encodedData);
-  const output = new Int8Array(encodedLen);
+  const output = new Uint8Array(encodedLen);
   for (let i = 0; i < encodedLen; i++) {
-    output[i] = encodedData.GetValue(i);
+    output[i] = encodedData.GetValue(i) & 0xff;
   }
 
   // Cleanup
@@ -229,7 +229,8 @@ async function compressGeometryDraco(
   mod.destroy(encoder);
   mod.destroy(meshBuilder);
 
-  return output.buffer;
+  // Return an exact-size buffer slice to avoid trailing slack bytes
+  return output.buffer.slice(output.byteOffset, output.byteOffset + encodedLen);
 }
 
 // ---------------------------------------------------------------------------

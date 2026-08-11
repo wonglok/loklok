@@ -43,29 +43,42 @@ const DRACO_WASM_URL = "/draco/";
 
 async function decodeDraco(
   buffer: ArrayBuffer,
+  objectName: string,
 ): Promise<{
   vertices: Float32Array;
   indices: Uint32Array;
   uvs?: Float32Array;
 }> {
+  // Ensure we have an exact-size buffer (no slack bytes from the zip extraction)
+  const bytes = new Uint8Array(buffer);
+
   const mod = await (draco3d as any).createDecoderModule({
     locateFile: (path: string) => DRACO_WASM_URL + path,
   });
 
   const decoder = new mod.Decoder();
   const decoderBuffer = new mod.DecoderBuffer();
-  decoderBuffer.Init(new Int8Array(buffer), buffer.byteLength);
+  decoderBuffer.Init(new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), bytes.byteLength);
 
   const geometryType = decoder.GetEncodedGeometryType(decoderBuffer);
   if (geometryType !== mod.TRIANGULAR_MESH) {
     mod.destroy(decoderBuffer);
     mod.destroy(decoder);
-    throw new Error("Draco: expected triangular mesh");
+    if (geometryType === -1) {
+      throw new Error(`Draco: invalid or corrupt data for "${objectName}"`);
+    }
+    throw new Error(`Draco: unexpected geometry type ${geometryType} for "${objectName}"`);
   }
 
   const mesh = new mod.Mesh();
-  decoder.DecodeBufferToMesh(decoderBuffer, mesh);
+  const status = decoder.DecodeBufferToMesh(decoderBuffer, mesh);
   mod.destroy(decoderBuffer);
+
+  if (!status.ok || mesh.num_faces() === 0) {
+    mod.destroy(mesh);
+    mod.destroy(decoder);
+    throw new Error(`Draco: decode failed for "${objectName}" (${status.error_string?.() ?? "unknown"})`);
+  }
 
   // Indices
   const numFaces = mesh.num_faces();
@@ -82,6 +95,12 @@ async function decodeDraco(
 
   // POSITION
   const posAttrId = decoder.GetAttributeId(mesh, mod.POSITION);
+  if (posAttrId < 0) {
+    mod.destroy(mesh);
+    mod.destroy(decoder);
+    throw new Error(`Draco: no POSITION attribute for "${objectName}"`);
+  }
+
   const posAttr = decoder.GetAttribute(mesh, posAttrId);
   const numVertices = mesh.num_points();
   const vertices = new Float32Array(numVertices * 3);
@@ -207,49 +226,56 @@ async function loadProductionScene(
   const geometryMap = new Map<string, THREE.BufferGeometry>();
 
   for (const entry of geoEntries) {
-    const safeName = entry.name.replace(/[<>:"/\\|?*]/g, "_");
+    try {
+      const safeName = entry.name.replace(/[<>:"/\\|?*]/g, "_");
 
-    // Try Draco first, fall back to raw
-    let dracoFile = zip.file(`geometry/${safeName}/draco.bin`);
-    if (dracoFile) {
-      const dracoBuf = await dracoFile.async("arraybuffer");
-      const decoded = await decodeDraco(dracoBuf);
+      // Try Draco first, fall back to raw
+      const dracoFile = zip.file(`geometry/${safeName}/draco.bin`);
+      if (dracoFile) {
+        const dracoBuf = await dracoFile.async("arraybuffer");
+        const decoded = await decodeDraco(dracoBuf, entry.name);
 
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute(
-        "position",
-        new THREE.BufferAttribute(decoded.vertices, 3),
-      );
-      geo.setIndex(new THREE.BufferAttribute(decoded.indices, 1));
-      if (decoded.uvs) {
+        const geo = new THREE.BufferGeometry();
         geo.setAttribute(
-          "uv",
-          new THREE.BufferAttribute(decoded.uvs, 2),
+          "position",
+          new THREE.BufferAttribute(decoded.vertices, 3),
         );
+        geo.setIndex(new THREE.BufferAttribute(decoded.indices, 1));
+        if (decoded.uvs) {
+          geo.setAttribute(
+            "uv",
+            new THREE.BufferAttribute(decoded.uvs, 2),
+          );
+        }
+        geo.computeVertexNormals();
+        geometryMap.set(entry.name, geo);
+        continue;
       }
-      geo.computeVertexNormals();
-      geometryMap.set(entry.name, geo);
-      continue;
-    }
 
-    // Fallback: raw vertices + indices
-    const vertsFile = zip.file(`geometry/${safeName}/vertices.bin`);
-    const idxsFile = zip.file(`geometry/${safeName}/indices.bin`);
-    const uvsFile = zip.file(`geometry/${safeName}/uvs.bin`);
+      // Fallback: raw vertices + indices
+      const vertsFile = zip.file(`geometry/${safeName}/vertices.bin`);
+      const idxsFile = zip.file(`geometry/${safeName}/indices.bin`);
+      const uvsFile = zip.file(`geometry/${safeName}/uvs.bin`);
 
-    if (vertsFile && idxsFile) {
-      const verts = new Float32Array(await vertsFile.async("arraybuffer"));
-      const idxs = new Uint32Array(await idxsFile.async("arraybuffer"));
+      if (vertsFile && idxsFile) {
+        const verts = new Float32Array(await vertsFile.async("arraybuffer"));
+        const idxs = new Uint32Array(await idxsFile.async("arraybuffer"));
 
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
-      geo.setIndex(new THREE.BufferAttribute(idxs, 1));
-      if (uvsFile) {
-        const uvs = new Float32Array(await uvsFile.async("arraybuffer"));
-        geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+        geo.setIndex(new THREE.BufferAttribute(idxs, 1));
+        if (uvsFile) {
+          const uvs = new Float32Array(await uvsFile.async("arraybuffer"));
+          geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+        }
+        geo.computeVertexNormals();
+        geometryMap.set(entry.name, geo);
       }
-      geo.computeVertexNormals();
-      geometryMap.set(entry.name, geo);
+    } catch (err) {
+      console.warn(
+        `[ProductionViewer] Geometry "${entry.name}" skipped:`,
+        err,
+      );
     }
   }
 
