@@ -299,6 +299,7 @@ async function loadProductionScene(
     mat.transparent = isTransparent;
     if (opacity < 1.0) mat.opacity = opacity;
     if (alphaTest > 0) mat.alphaTest = alphaTest;
+    if (obj.flatShading === true) mat.flatShading = true;
 
     loadedObjects.push({
       name: obj.name,
