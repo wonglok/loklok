@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
-// OPFS Optimizer — compress raw buffers/textures to AVIF + Draco
+// OPFS Optimizer — compress raw buffers/textures to WebP + Draco
 // ---------------------------------------------------------------------------
 // Reads from ./current-view/* and writes optimised assets to
 // ./current-optimised-view/*.
 //
 // Optimisation pipeline:
-//   1. Textures    → AVIF re-encode (via OffscreenCanvas)
-//   2. HDR         → Tonemapped AVIF preview (Reinhard + gamma)
-//   3. Geometry    → Draco-compressed .bin (via Three.js DRACOExporter)
+//   1. Textures    → WebP re-encode (via OffscreenCanvas, universal support)
+//   2. HDR         → Tonemapped WebP preview (Reinhard + gamma)
+//   3. Geometry    → Draco-compressed .bin (via draco3d WASM)
 //   4. Scene JSON  → Copy-through with updated references
 // ---------------------------------------------------------------------------
 
@@ -49,7 +49,10 @@ async function writeJSON(
   await writable.close();
 }
 
-async function readJSON<T>(dir: FileSystemDirectoryHandle, name: string): Promise<T | null> {
+async function readJSON<T>(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+): Promise<T | null> {
   try {
     const file = await dir.getFileHandle(name);
     const f = await file.getFile();
@@ -71,27 +74,31 @@ async function writeBinary(
 }
 
 // ---------------------------------------------------------------------------
-// AVIF encode — via OffscreenCanvas
+// WebP encode — via OffscreenCanvas (universal browser support)
 // ---------------------------------------------------------------------------
 
-interface AvifEncodeOptions {
+interface WebPEncodeOptions {
   quality?: number;
   maxWidth?: number;
   maxHeight?: number;
 }
 
-const DEFAULT_AVIF_OPTIONS: AvifEncodeOptions = {
-  quality: 0.65,
+const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
+  quality: 0.82,
   maxWidth: 4096,
   maxHeight: 4096,
 };
 
-async function encodeAVIF(
+async function encodeWebP(
   source: ImageBitmap | Blob,
-  options: AvifEncodeOptions = {},
+  options: WebPEncodeOptions = {},
 ): Promise<{ blob: Blob; mime: string }> {
-  const { quality = 0.65, maxWidth = 4096, maxHeight = 4096 } = {
-    ...DEFAULT_AVIF_OPTIONS,
+  const {
+    quality = 0.82,
+    maxWidth = 4096,
+    maxHeight = 4096,
+  } = {
+    ...DEFAULT_WEBP_OPTIONS,
     ...options,
   };
 
@@ -102,15 +109,20 @@ async function encodeAVIF(
     bitmap = source;
   }
 
-  const { width, height } = computeScaledSize(bitmap.width, bitmap.height, maxWidth, maxHeight);
+  const { width, height } = computeScaledSize(
+    bitmap.width,
+    bitmap.height,
+    maxWidth,
+    maxHeight,
+  );
 
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d")!;
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  const blob = await canvas.convertToBlob({ type: "image/avif", quality });
-  return { blob, mime: "image/avif" };
+  const blob = await canvas.convertToBlob({ type: "image/webp", quality });
+  return { blob, mime: "image/webp" };
 }
 
 function computeScaledSize(
@@ -125,10 +137,14 @@ function computeScaledSize(
 }
 
 // ---------------------------------------------------------------------------
-// HDR → LDR tonemap (Reinhard) for AVIF preview
+// HDR → LDR tonemap (Reinhard) for WebP preview
 // ---------------------------------------------------------------------------
 
-function tonemapReinhard(r: number, g: number, b: number): [number, number, number] {
+function tonemapReinhard(
+  r: number,
+  g: number,
+  b: number,
+): [number, number, number] {
   const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const mapped = luminance / (1.0 + luminance);
   const scale = luminance > 0 ? mapped / luminance : 0;
@@ -144,7 +160,7 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-async function hdrToAVIF(
+async function hdrToWebP(
   pixels: ArrayBuffer,
   width: number,
   height: number,
@@ -173,8 +189,8 @@ async function hdrToAVIF(
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
 
-  const blob = await canvas.convertToBlob({ type: "image/avif", quality: 0.7 });
-  return { blob, mime: "image/avif" };
+  const blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.82 });
+  return { blob, mime: "image/webp" };
 }
 
 // ---------------------------------------------------------------------------
@@ -272,13 +288,12 @@ export class OpfsOptimiser {
 
   /**
    * Run the full optimisation pipeline:
-   *   1. Textures → AVIF
-   *   2. HDR → tonemapped AVIF
+   *   1. Textures → WebP
+   *   2. HDR → tonemapped WebP
    *   3. Geometry → Draco
    *   4. Cameras, lights, scene JSON copy-through
    */
   async optimise(onProgress?: OptimiserCallback): Promise<void> {
-    const caps = await this.init();
     const root = await opfs["init"]();
 
     // -- Clear previous optimised output --
@@ -304,29 +319,38 @@ export class OpfsOptimiser {
 
       for (let i = 0; i < texEntries.length; i++) {
         const entry = texEntries[i];
-        onProgress?.({ stage: "textures", current: i, total: texEntries.length });
+        onProgress?.({
+          stage: "textures",
+          current: i,
+          total: texEntries.length,
+        });
 
         try {
           const texData = await opfs.readTexture(entry.name);
           if (!texData) continue;
 
-          if (caps.avifEncode) {
-            const blob = new Blob([texData.bytes], { type: texData.mime });
-            const { blob: avifBlob, mime } = await encodeAVIF(blob);
-            await writeBinary(texOutDir, `${entry.name}.avif`, await avifBlob.arrayBuffer());
-            texOutManifest.push({ name: entry.name, mime });
-          } else {
-            const ext = mimeToExt(entry.mime);
-            await writeBinary(texOutDir, `${entry.name}.${ext}`, texData.bytes);
-            texOutManifest.push({ name: entry.name, mime: entry.mime });
-          }
+          const blob = new Blob([texData.bytes], { type: texData.mime });
+          const { blob: webpBlob, mime } = await encodeWebP(blob);
+          await writeBinary(
+            texOutDir,
+            `${entry.name}.webp`,
+            await webpBlob.arrayBuffer(),
+          );
+          texOutManifest.push({ name: entry.name, mime });
         } catch (err) {
-          console.warn(`[OPFS Optimiser] Texture "${entry.name}" skipped:`, err);
+          console.warn(
+            `[OPFS Optimiser] Texture "${entry.name}" skipped:`,
+            err,
+          );
         }
       }
 
       await writeJSON(texOutDir, "manifest.json", texOutManifest);
-      onProgress?.({ stage: "textures", current: texEntries.length, total: texEntries.length });
+      onProgress?.({
+        stage: "textures",
+        current: texEntries.length,
+        total: texEntries.length,
+      });
     }
 
     // ---- HDR ----
@@ -338,23 +362,18 @@ export class OpfsOptimiser {
 
       try {
         const hdrOutDir = await ensureDir(outRoot, "hdr");
-        if (caps.avifEncode) {
-          const { blob, mime } = await hdrToAVIF(
-            hdrPixels,
-            hdrConfig.width,
-            hdrConfig.height,
-            hdrConfig.intensity,
-          );
-          await writeBinary(hdrOutDir, "data.avif", await blob.arrayBuffer());
-          await writeJSON(hdrOutDir, "config.json", {
-            ...hdrConfig,
-            format: mime,
-            tonemapped: true,
-          });
-        } else {
-          await writeBinary(hdrOutDir, "data.bin", hdrPixels);
-          await writeJSON(hdrOutDir, "config.json", hdrConfig);
-        }
+        const { blob, mime } = await hdrToWebP(
+          hdrPixels,
+          hdrConfig.width,
+          hdrConfig.height,
+          hdrConfig.intensity,
+        );
+        await writeBinary(hdrOutDir, "data.webp", await blob.arrayBuffer());
+        await writeJSON(hdrOutDir, "config.json", {
+          ...hdrConfig,
+          format: mime,
+          tonemapped: true,
+        });
       } catch (err) {
         console.warn("[OPFS Optimiser] HDR skipped:", err);
       }
@@ -378,16 +397,27 @@ export class OpfsOptimiser {
 
       for (let i = 0; i < geoEntries.length; i++) {
         const entry = geoEntries[i];
-        onProgress?.({ stage: "geometry", current: i, total: geoEntries.length });
+        onProgress?.({
+          stage: "geometry",
+          current: i,
+          total: geoEntries.length,
+        });
 
         try {
           const geo = await opfs.readGeometry(entry.name);
           if (!geo) continue;
 
-          const geoOutDir = await ensureDir(outRoot, `geometry/${sanitiseName(entry.name)}`);
+          const geoOutDir = await ensureDir(
+            outRoot,
+            `geometry/${sanitiseName(entry.name)}`,
+          );
 
           try {
-            const dracoBuf = await compressGeometryDraco(geo.vertices, geo.indices, geo.uvs);
+            const dracoBuf = await compressGeometryDraco(
+              geo.vertices,
+              geo.indices,
+              geo.uvs,
+            );
             await writeBinary(geoOutDir, "draco.bin", dracoBuf);
           } catch (err) {
             // Draco failed — copy raw as fallback
@@ -400,7 +430,11 @@ export class OpfsOptimiser {
               "vertices.bin",
               sliceBuffer(geo.vertices),
             );
-            await writeBinary(geoOutDir, "indices.bin", sliceBuffer(geo.indices));
+            await writeBinary(
+              geoOutDir,
+              "indices.bin",
+              sliceBuffer(geo.indices),
+            );
             if (geo.uvs) {
               await writeBinary(geoOutDir, "uvs.bin", sliceBuffer(geo.uvs));
             }
@@ -414,14 +448,21 @@ export class OpfsOptimiser {
           };
           await writeJSON(geoOutDir, "config.json", config);
         } catch (err) {
-          console.warn(`[OPFS Optimiser] Geometry "${entry.name}" skipped:`, err);
+          console.warn(
+            `[OPFS Optimiser] Geometry "${entry.name}" skipped:`,
+            err,
+          );
         }
       }
 
       const geoOutManifestDir = await ensureDir(outRoot, "geometry");
       await writeJSON(geoOutManifestDir, "manifest.json", geoEntries);
 
-      onProgress?.({ stage: "geometry", current: geoEntries.length, total: geoEntries.length });
+      onProgress?.({
+        stage: "geometry",
+        current: geoEntries.length,
+        total: geoEntries.length,
+      });
     }
 
     // ---- Cameras, Lights, Scene (copy-through) ----
@@ -454,22 +495,14 @@ export class OpfsOptimiser {
 
 /** Safe slice of a TypedArray's underlying buffer. */
 function sliceBuffer(arr: Float32Array | Uint32Array): ArrayBuffer {
-  return arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength) as ArrayBuffer;
+  return arr.buffer.slice(
+    arr.byteOffset,
+    arr.byteOffset + arr.byteLength,
+  ) as ArrayBuffer;
 }
 
 function sanitiseName(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, "_");
-}
-
-function mimeToExt(mime: string): string {
-  const map: Record<string, string> = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/avif": "avif",
-    "image/bmp": "bmp",
-  };
-  return map[mime] ?? "bin";
 }
 
 // ---------------------------------------------------------------------------
