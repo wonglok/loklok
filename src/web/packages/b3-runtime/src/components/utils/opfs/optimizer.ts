@@ -92,6 +92,7 @@ const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
 
 async function encodeWebP(
   source: ImageBitmap | Blob,
+  sourceMime: string,
   options: WebPEncodeOptions = {},
 ): Promise<{ blob: Blob; mime: string }> {
   const {
@@ -122,7 +123,15 @@ async function encodeWebP(
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  const blob = await canvas.convertToBlob({ type: "image/webp", quality });
+  // PNG / WebP sources may have transparency — use lossless WebP to preserve alpha.
+  // Lossy WebP (VP8) discards the alpha channel.
+  const hasAlpha = sourceMime === "image/png" || sourceMime === "image/webp";
+  const blob = await canvas.convertToBlob(
+    hasAlpha
+      ? { type: "image/webp" }       // lossless (preserves alpha)
+      : { type: "image/webp", quality }, // lossy (JPEG source, no alpha)
+  );
+
   return { blob, mime: "image/webp" };
 }
 
@@ -320,7 +329,7 @@ export class OpfsOptimiser {
           if (!texData) continue;
 
           const blob = new Blob([texData.bytes], { type: texData.mime });
-          const { blob: webpBlob, mime } = await encodeWebP(blob);
+          const { blob: webpBlob, mime } = await encodeWebP(blob, texData.mime);
           await writeBinary(
             texOutDir,
             `${entry.name}.webp`,

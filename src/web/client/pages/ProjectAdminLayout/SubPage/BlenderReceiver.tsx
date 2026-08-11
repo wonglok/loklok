@@ -18,12 +18,14 @@ export function BlenderReceiver() {
         <BlenderConnection></BlenderConnection>
         <div className="w-full h-full">
           <div className="w-full h-1/2">
+            <div>Sync</div>
             <CanvasGPU>
               <SyncViewer />
               <CameraSync />
             </CanvasGPU>
           </div>
           <div className="w-full h-1/2 border-t border-border">
+            <div>Production</div>
             <OutputPreview />
           </div>
         </div>

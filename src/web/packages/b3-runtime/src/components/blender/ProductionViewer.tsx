@@ -197,6 +197,8 @@ async function loadProductionScene(
     });
     URL.revokeObjectURL(url);
     texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
     textureMap.set(entry.name, texture);
   }
 
@@ -261,7 +263,11 @@ async function loadProductionScene(
     const geo = geometryMap.get(obj.name);
     if (!geo) continue;
 
-    const hasAlpha = obj.transparent && (obj.opacity ?? 1) < 1;
+    const opacity = obj.opacity ?? 1;
+    const alphaTest = obj.alphaTest ?? 0;
+    const needsBlend = obj.transparent && opacity < 1;
+    const needsClip = alphaTest > 0;
+
     const mat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(
         obj.texture ? 1 : (obj.color?.[0] ?? 0.5),
@@ -278,9 +284,12 @@ async function loadProductionScene(
         ? (textureMap.get(obj.metalnessMap) ?? null)
         : null,
       normalMap: obj.normalMap ? (textureMap.get(obj.normalMap) ?? null) : null,
-      transparent: hasAlpha,
-      opacity: obj.opacity ?? 1,
       side: THREE.FrontSide,
+      // Alpha
+      transparent: needsBlend,
+      opacity,
+      alphaTest: needsClip ? alphaTest : 0,
+      depthWrite: !needsBlend,
     });
 
     loadedObjects.push({
