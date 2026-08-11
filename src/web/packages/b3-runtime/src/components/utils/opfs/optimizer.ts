@@ -85,7 +85,7 @@ interface WebPEncodeOptions {
 }
 
 const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
-  quality: 0.82,
+  quality: 0.80,
   maxWidth: 4096,
   maxHeight: 4096,
 };
@@ -96,7 +96,7 @@ async function encodeWebP(
   options: WebPEncodeOptions = {},
 ): Promise<{ blob: Blob; mime: string }> {
   const {
-    quality = 0.82,
+    quality = 0.80,
     maxWidth = 4096,
     maxHeight = 4096,
   } = {
