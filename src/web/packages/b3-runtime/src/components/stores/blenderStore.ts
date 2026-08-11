@@ -34,6 +34,8 @@ interface BlenderStore {
   selectedCamera: CameraData | null;
   /** All scene Light objects from Blender — sent once per client, re-sent on change. */
   lights: LightData[];
+  /** Incremented each time a deployment zip is packaged — signals OutputPreview to refresh. */
+  deploymentVersion: number;
 
   // ---- Actions ----
   setConnectionState: (next: ConnectionState) => void;
@@ -47,6 +49,7 @@ interface BlenderStore {
   /** Select a scene camera to view through, or null to follow the viewport. */
   selectCamera: (cam: CameraData | null) => void;
   setLights: (next: LightData[]) => void;
+  bumpDeploymentVersion: () => void;
   /** Reset all scene data back to initial empty state. */
   clearAll: () => void;
 }
@@ -63,6 +66,7 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
   cameras: [],
   selectedCamera: null,
   lights: [],
+  deploymentVersion: 0,
 
   // Actions
   setConnectionState: (next) => set({ connectionState: next }),
@@ -95,6 +99,9 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
 
   setLights: (next) => set({ lights: next }),
 
+  bumpDeploymentVersion: () =>
+    set((prev) => ({ deploymentVersion: prev.deploymentVersion + 1 })),
+
   clearAll: () =>
     set({
       sceneData: { objects: [] },
@@ -106,5 +113,6 @@ export const useBlenderStore = create<BlenderStore>((set) => ({
       cameras: [],
       selectedCamera: null,
       lights: [],
+      deploymentVersion: 0,
     }),
 }));

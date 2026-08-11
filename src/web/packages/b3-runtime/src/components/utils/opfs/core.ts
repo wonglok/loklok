@@ -459,6 +459,27 @@ export class OpfsFS {
     await removeDir(root, "current-optimised-view");
   }
 
+  // ------------------------------------------------------------------
+  // Deployment (zipped bundle)
+  // ------------------------------------------------------------------
+
+  /** Read the packaged deployment zip as an ArrayBuffer. Returns null if not found. */
+  async readDeployment(): Promise<ArrayBuffer | null> {
+    const root = await this.init();
+    try {
+      const deployDir = await root.getDirectoryHandle("current-deployment");
+      return await readBinary(deployDir, "scene.zip");
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remove the ./current-deployment subtree. */
+  async clearDeployment(): Promise<void> {
+    const root = await this.init();
+    await removeDir(root, "current-deployment");
+  }
+
   /** Remove both current-view and current-optimised-view. */
   async clearAll(): Promise<void> {
     await this.clearCurrentView();

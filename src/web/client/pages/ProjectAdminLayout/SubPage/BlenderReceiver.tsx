@@ -1,14 +1,15 @@
 "use client";
 
-import { Sidebar } from "../../../../packages/b3-runtime/src";
+import { useState, useEffect } from "react";
+import { ProductionViewer, Sidebar } from "../../../../packages/b3-runtime/src";
 import { CameraSync } from "../../../../packages/b3-runtime/src/components/blender/CameraSync";
 import { CanvasGPU } from "../../../../packages/b3-runtime/src/components/blender/CanvasGPU";
-import { OpfsBrowser } from "../../../../packages/b3-runtime/src/components/blender/OpfsBrowser";
-// import { Sidebar } from "../../packages/b3-runtime/src/components/blender/Sidebar";
+import { useBlenderStore } from "../../../../packages/b3-runtime/src/components/stores/blenderStore";
 import {
   BlenderConnection,
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/SyncViewer";
+import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
 
 export function BlenderReceiver() {
   return (
@@ -22,24 +23,98 @@ export function BlenderReceiver() {
               <CameraSync />
             </CanvasGPU>
           </div>
-          <div className="w-full h-1/2">
-            <OpfsBrowser></OpfsBrowser>
+          <div className="w-full h-1/2 border-t border-border">
+            <OutputPreview />
           </div>
         </div>
         <Sidebar></Sidebar>
-      </div>
-      <div className=" absolute top-0 left-0">
-        <div className="">
-          <button className="block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1">
-            Import to 3D Envrionment
-          </button>
-          <button className="block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1">
-            Import to 3D Props
-          </button>
-        </div>
       </div>
     </div>
   );
 }
 
-//
+// ---------------------------------------------------------------------------
+// OutputPreview — loads the deployment zip from OPFS and renders it
+// ---------------------------------------------------------------------------
+
+function OutputPreview() {
+  const deploymentVersion = useBlenderStore((s) => s.deploymentVersion);
+  const [zipBuffer, setZipBuffer] = useState<ArrayBuffer | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const buf = await opfs.readDeployment();
+        if (cancelled) return;
+        setZipBuffer(buf);
+        if (!buf) setError(null); // not an error, just nothing deployed yet
+      } catch (err) {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to load deployment",
+        );
+        setZipBuffer(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [deploymentVersion]);
+
+  // Loading
+  if (loading && !zipBuffer) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-surface-primary/50 text-text-muted text-xs font-mono">
+        <span>Loading deployment…</span>
+      </div>
+    );
+  }
+
+  // Error
+  if (error) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-surface-primary/50 text-status-red text-xs font-mono">
+        <span>{error}</span>
+      </div>
+    );
+  }
+
+  // Empty — no deployment yet
+  if (!zipBuffer) {
+    return (
+      <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-surface-primary/50 text-text-muted text-xs font-mono">
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="opacity-40"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <line x1="3" y1="9" x2="21" y2="9" />
+          <line x1="9" y1="21" x2="9" y2="9" />
+        </svg>
+        <span className="opacity-60">
+          No deployment yet — save a snapshot to preview the optimised scene.
+        </span>
+      </div>
+    );
+  }
+
+  // Ready — render production view
+  return <ProductionViewer zipBuffer={zipBuffer} />;
+}

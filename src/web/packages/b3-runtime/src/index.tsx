@@ -9,6 +9,8 @@ import {
   SyncViewer,
 } from "./components/blender/SyncViewer";
 import { ReceiverPage } from "./pages/ReciverPage";
+import { OpfsBrowser } from "./components/blender/OpfsBrowser";
+import { ProductionViewer } from "./components/blender/ProductionViewer";
 
 // components
 export {
@@ -18,9 +20,14 @@ export {
   SyncViewer,
   CameraSync,
   RefreshButton,
+  OpfsBrowser,
+  ProductionViewer,
 };
 
 // pages
 export { ReceiverPage };
+
+// OPFS SDK
+export { opfs, OpfsFS, opfsOptimiser, OpfsOptimiser, detectCapabilities } from "./components/utils/opfs";
 
 //

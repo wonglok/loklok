@@ -162,7 +162,7 @@ export function Sidebar() {
 
   // Snapshot state
   const [snapshotStatus, setSnapshotStatus] = useState<
-    "idle" | "saving" | "optimising" | "done" | "error"
+    "idle" | "saving" | "optimising" | "packaging" | "done" | "error"
   >("idle");
   const [snapshotVersion, setSnapshotVersion] = useState(0);
 
@@ -187,8 +187,12 @@ export function Sidebar() {
       setSnapshotStatus("optimising");
       await opfsOptimiser.optimise();
 
+      setSnapshotStatus("packaging");
+      await opfsOptimiser.packageDeployment();
+
       setSnapshotStatus("done");
       setSnapshotVersion((v) => v + 1);
+      useBlenderStore.getState().bumpDeploymentVersion();
       setTimeout(() => setSnapshotStatus("idle"), 2000);
     } catch (err) {
       console.error("[B3Sync] Snapshot failed:", err);
@@ -350,7 +354,7 @@ export function Sidebar() {
           </div>
           <button
             onClick={takeSnapshot}
-            disabled={!isConnected || snapshotStatus === "saving" || snapshotStatus === "optimising"}
+            disabled={!isConnected || snapshotStatus === "saving" || snapshotStatus === "optimising" || snapshotStatus === "packaging"}
             className={`
               w-full px-2.5 py-1.5 rounded flex items-center justify-center gap-1.5
               bg-surface-secondary border border-border
@@ -376,11 +380,13 @@ export function Sidebar() {
               ? "Saving…"
               : snapshotStatus === "optimising"
                 ? "Optimising…"
-                : snapshotStatus === "done"
-                  ? "Saved"
-                  : snapshotStatus === "error"
-                    ? "Failed"
-                    : "Save Snapshot"}
+                : snapshotStatus === "packaging"
+                  ? "Packaging…"
+                  : snapshotStatus === "done"
+                    ? "Saved"
+                    : snapshotStatus === "error"
+                      ? "Failed"
+                      : "Save Snapshot"}
           </button>
         </div>
 

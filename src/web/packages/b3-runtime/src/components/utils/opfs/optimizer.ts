@@ -14,6 +14,7 @@
 import draco3d from "draco3d";
 import { DataTexture, RGBAFormat, FloatType } from "three";
 import { KTX2Exporter } from "three/addons/exporters/KTX2Exporter.js";
+import JSZip from "jszip";
 
 import type {
   HdrConfig,
@@ -453,6 +454,55 @@ export class OpfsOptimiser {
     onProgress?.({ stage: "meta", current: 3, total: 3 });
 
     onProgress?.({ stage: "done", current: 1, total: 1 });
+  }
+
+  /**
+   * Package everything in current-optimised-view into a single .zip and
+   * save it to current-deployment/scene.zip.  Returns the zip ArrayBuffer
+   * so callers can also pass it to ProductionViewer directly.
+   */
+  async packageDeployment(onProgress?: OptimiserCallback): Promise<ArrayBuffer> {
+    onProgress?.({ stage: "package", current: 0, total: 1 });
+
+    const root = await opfs["init"]();
+    const zip = new JSZip();
+
+    // Recursively add all files from an OPFS directory into a zip folder
+    async function addDir(
+      handle: FileSystemDirectoryHandle,
+      zipFolder: JSZip,
+    ): Promise<void> {
+      for await (const [name, childHandle] of (handle as any).entries()) {
+        if (childHandle.kind === "file") {
+          const file = await (childHandle as FileSystemFileHandle).getFile();
+          zipFolder.file(name, await file.arrayBuffer());
+        } else {
+          const sub = zipFolder.folder(name)!;
+          await addDir(childHandle as FileSystemDirectoryHandle, sub);
+        }
+      }
+    }
+
+    // Walk current-optimised-view
+    const ovExists = await (async () => {
+      try { await root.getDirectoryHandle("current-optimised-view"); return true; }
+      catch { return false; }
+    })();
+
+    if (ovExists) {
+      const ovDir = await root.getDirectoryHandle("current-optimised-view");
+      await addDir(ovDir, zip);
+    }
+
+    // Write to current-deployment
+    const deployDir = await ensureDir(root, "current-deployment");
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const zipBuffer = await zipBlob.arrayBuffer();
+    await writeBinary(deployDir, "scene.zip", zipBuffer);
+
+    onProgress?.({ stage: "package", current: 1, total: 1 });
+
+    return zipBuffer;
   }
 }
 
