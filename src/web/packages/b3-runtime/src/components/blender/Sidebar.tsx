@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBlenderSyncStore } from "../stores/blenderSyncStore";
-import { downloadGLB } from "../utils/exportGLB";
+import { opfs, opfsOptimiser } from "../utils/opfs";
 import type { ConnectionState } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
@@ -96,6 +96,25 @@ function RefreshIcon() {
   );
 }
 
+function SaveIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
@@ -139,6 +158,41 @@ export function Sidebar() {
   const config = stateConfig[connectionState];
   const isConnected = connectionState === "connected";
   const isConnecting = connectionState === "connecting";
+
+  // Snapshot state
+  const [snapshotStatus, setSnapshotStatus] = useState<
+    "idle" | "saving" | "optimising" | "done" | "error"
+  >("idle");
+
+  const takeSnapshot = async () => {
+    if (!isConnected) return;
+    try {
+      setSnapshotStatus("saving");
+
+      const store = useBlenderStore.getState();
+      await opfs.writeSnapshot({
+        scene: store.sceneData,
+        hdrPixels: store.hdrData?.pixels,
+        hdrWidth: store.hdrData?.width,
+        hdrHeight: store.hdrData?.height,
+        hdrIntensity: store.hdrIntensity,
+        textures: store.texData,
+        geoBuffers: store.geoBuffers,
+        cameras: store.cameras,
+        lights: store.lights,
+      });
+
+      setSnapshotStatus("optimising");
+      await opfsOptimiser.optimise();
+
+      setSnapshotStatus("done");
+      setTimeout(() => setSnapshotStatus("idle"), 2000);
+    } catch (err) {
+      console.error("[B3Sync] Snapshot failed:", err);
+      setSnapshotStatus("error");
+      setTimeout(() => setSnapshotStatus("idle"), 3000);
+    }
+  };
 
   return (
     <div
@@ -264,28 +318,6 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Export */}
-        <div className="space-y-1.5">
-          <div className="text-[10px] uppercase tracking-widest text-text-muted">
-            Export
-          </div>
-          <button
-            onClick={downloadGLB}
-            disabled={!isConnected}
-            className="
-              w-full px-2.5 py-1.5 rounded
-              bg-surface-secondary border border-border
-              text-text-secondary text-[11px] font-semibold
-              hover:bg-surface-tertiary hover:text-text-primary
-              disabled:opacity-40 disabled:cursor-not-allowed
-              transition-colors
-            "
-            title="Download optimized scene as GLB"
-          >
-            Download GLB
-          </button>
-        </div>
-
         {/* Object count */}
         <div className="space-y-1.5">
           <div className="text-[10px] uppercase tracking-widest text-text-muted">
@@ -306,6 +338,47 @@ export function Sidebar() {
               )}
             </span>
           </div>
+        </div>
+
+        {/* Snapshot */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-text-muted">
+            Snapshot
+          </div>
+          <button
+            onClick={takeSnapshot}
+            disabled={!isConnected || snapshotStatus === "saving" || snapshotStatus === "optimising"}
+            className={`
+              w-full px-2.5 py-1.5 rounded flex items-center justify-center gap-1.5
+              bg-surface-secondary border border-border
+              text-text-secondary text-[11px] font-semibold
+              hover:bg-surface-tertiary hover:text-text-primary
+              disabled:opacity-40 disabled:cursor-not-allowed
+              transition-colors
+              ${
+                snapshotStatus === "done"
+                  ? "border-status-green/40 text-status-green"
+                  : ""
+              }
+              ${
+                snapshotStatus === "error"
+                  ? "border-status-red/40 text-status-red"
+                  : ""
+              }
+            `}
+            title="Save raw scene data to OPFS, then run AVIF+Draco optimiser"
+          >
+            <SaveIcon />
+            {snapshotStatus === "saving"
+              ? "Saving…"
+              : snapshotStatus === "optimising"
+                ? "Optimising…"
+                : snapshotStatus === "done"
+                  ? "Saved"
+                  : snapshotStatus === "error"
+                    ? "Failed"
+                    : "Save Snapshot"}
+          </button>
         </div>
 
         {/* Camera Sync */}

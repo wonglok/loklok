@@ -148,16 +148,31 @@ function computeNormals(
     const nx = uy * vz - uz * vy,
       ny = uz * vx - ux * vz,
       nz = ux * vy - uy * vx;
-    normals[a] += nx; normals[a + 1] += ny; normals[a + 2] += nz;
-    normals[b] += nx; normals[b + 1] += ny; normals[b + 2] += nz;
-    normals[c] += nx; normals[c + 1] += ny; normals[c + 2] += nz;
+    normals[a] += nx;
+    normals[a + 1] += ny;
+    normals[a + 2] += nz;
+    normals[b] += nx;
+    normals[b + 1] += ny;
+    normals[b + 2] += nz;
+    normals[c] += nx;
+    normals[c + 1] += ny;
+    normals[c + 2] += nz;
   }
   for (let i = 0; i < vCount; i++) {
     const off = i * 3;
-    const nx = normals[off], ny = normals[off + 1], nz = normals[off + 2];
+    const nx = normals[off],
+      ny = normals[off + 1],
+      nz = normals[off + 2];
     const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    if (len > 0) { normals[off] = nx / len; normals[off + 1] = ny / len; normals[off + 2] = nz / len; }
-    else { normals[off] = 0; normals[off + 1] = 1; normals[off + 2] = 0; }
+    if (len > 0) {
+      normals[off] = nx / len;
+      normals[off + 1] = ny / len;
+      normals[off + 2] = nz / len;
+    } else {
+      normals[off] = 0;
+      normals[off + 1] = 1;
+      normals[off + 2] = 0;
+    }
   }
   return normals;
 }
@@ -201,7 +216,11 @@ async function buildDocument(): Promise<any | null> {
     const tex = texData.get(name);
     if (tex && tex.bytes.byteLength > 0) {
       texIndexMap.set(name, texEntries.length);
-      texEntries.push({ name, mime: tex.mime, bytes: new Uint8Array(tex.bytes) });
+      texEntries.push({
+        name,
+        mime: tex.mime,
+        bytes: new Uint8Array(tex.bytes),
+      });
     }
   }
 
@@ -221,26 +240,50 @@ async function buildDocument(): Promise<any | null> {
     const norms = computeNormals(pos, idx);
 
     const posBytes = new Uint8Array(pos.buffer, pos.byteOffset, pos.byteLength);
-    const normBytes = new Uint8Array(norms.buffer, norms.byteOffset, norms.byteLength);
+    const normBytes = new Uint8Array(
+      norms.buffer,
+      norms.byteOffset,
+      norms.byteLength,
+    );
     const idxBytes = new Uint8Array(idx.buffer, idx.byteOffset, idx.byteLength);
-    const uvBytes = uvs ? new Uint8Array(uvs.buffer, uvs.byteOffset, uvs.byteLength) : undefined;
+    const uvBytes = uvs
+      ? new Uint8Array(uvs.buffer, uvs.byteOffset, uvs.byteLength)
+      : undefined;
 
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      minZ = Infinity;
+    let maxX = -Infinity,
+      maxY = -Infinity,
+      maxZ = -Infinity;
     for (let i = 0; i < pos.length; i += 3) {
-      if (pos[i] < minX) minX = pos[i]; if (pos[i + 1] < minY) minY = pos[i + 1]; if (pos[i + 2] < minZ) minZ = pos[i + 2];
-      if (pos[i] > maxX) maxX = pos[i]; if (pos[i + 1] > maxY) maxY = pos[i + 1]; if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
+      if (pos[i] < minX) minX = pos[i];
+      if (pos[i + 1] < minY) minY = pos[i + 1];
+      if (pos[i + 2] < minZ) minZ = pos[i + 2];
+      if (pos[i] > maxX) maxX = pos[i];
+      if (pos[i + 1] > maxY) maxY = pos[i + 1];
+      if (pos[i + 2] > maxZ) maxZ = pos[i + 2];
     }
 
     const baseOffset = binParts.reduce((sum, p) => sum + p.byteLength, 0);
     prims.push({
-      obj, geo,
+      obj,
+      geo,
       posByteOffset: baseOffset,
       normByteOffset: baseOffset + posBytes.byteLength,
-      uvByteOffset: uvBytes ? baseOffset + posBytes.byteLength + normBytes.byteLength : undefined,
-      idxByteOffset: baseOffset + posBytes.byteLength + normBytes.byteLength + (uvBytes?.byteLength ?? 0),
-      posCount: pos.length / 3, uvCount: uvs ? uvs.length / 2 : 0, idxCount: idx.length,
-      posMin: [minX, minY, minZ], posMax: [maxX, maxY, maxZ],
+      uvByteOffset: uvBytes
+        ? baseOffset + posBytes.byteLength + normBytes.byteLength
+        : undefined,
+      idxByteOffset:
+        baseOffset +
+        posBytes.byteLength +
+        normBytes.byteLength +
+        (uvBytes?.byteLength ?? 0),
+      posCount: pos.length / 3,
+      uvCount: uvs ? uvs.length / 2 : 0,
+      idxCount: idx.length,
+      posMin: [minX, minY, minZ],
+      posMax: [maxX, maxY, maxZ],
     });
     binParts.push(posBytes, normBytes);
     if (uvBytes) binParts.push(uvBytes);
@@ -262,7 +305,10 @@ async function buildDocument(): Promise<any | null> {
   const binLength = binParts.reduce((s, p) => s + p.byteLength, 0);
   const bufferBin = new Uint8Array(binLength);
   let cursor = 0;
-  for (const part of binParts) { bufferBin.set(part, cursor); cursor += part.byteLength; }
+  for (const part of binParts) {
+    bufferBin.set(part, cursor);
+    cursor += part.byteLength;
+  }
 
   // ------------------------------------------------------------------
   // Build glTF JSON (bufferViews, accessors, meshes, nodes, etc.)
@@ -277,12 +323,21 @@ async function buildDocument(): Promise<any | null> {
   const materials: any[] = [];
   const matIdxMap = new Map<string, number>();
 
-  samplers.push({ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 });
+  samplers.push({
+    magFilter: 9729,
+    minFilter: 9987,
+    wrapS: 10497,
+    wrapT: 10497,
+  });
 
   // Texture images → bufferViews + images + textures
   for (let i = 0; i < texEntries.length; i++) {
     const bvIdx = bufferViews.length;
-    bufferViews.push({ buffer: 0, byteOffset: texByteOffsets[i], byteLength: texEntries[i].bytes.byteLength });
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: texByteOffsets[i],
+      byteLength: texEntries[i].bytes.byteLength,
+    });
     images.push({ mimeType: texEntries[i].mime, bufferView: bvIdx });
     textures.push({ sampler: 0, source: i });
   }
@@ -293,16 +348,30 @@ async function buildDocument(): Promise<any | null> {
   }
 
   function getMatIdx(obj: BlenderObject): number {
-    const key = [obj.color?.join(","), obj.roughness ?? 0.5, obj.metalness ?? 0, obj.opacity ?? 1, obj.texture ?? "", obj.roughnessMap ?? "", obj.metalnessMap ?? "", obj.normalMap ?? ""].join("_");
+    const key = [
+      obj.color?.join(","),
+      obj.roughness ?? 0.5,
+      obj.metalness ?? 0,
+      obj.opacity ?? 1,
+      obj.texture ?? "",
+      obj.roughnessMap ?? "",
+      obj.metalnessMap ?? "",
+      obj.normalMap ?? "",
+    ].join("_");
     if (matIdxMap.has(key)) return matIdxMap.get(key)!;
     const idx = materials.length;
     const mat: any = {
       pbrMetallicRoughness: {
-        baseColorFactor: [obj.color?.[0] ?? 0.5, obj.color?.[1] ?? 0.5, obj.color?.[2] ?? 0.5, obj.opacity ?? 1.0],
+        baseColorFactor: [
+          obj.color?.[0] ?? 0.5,
+          obj.color?.[1] ?? 0.5,
+          obj.color?.[2] ?? 0.5,
+          obj.opacity ?? 1.0,
+        ],
         metallicFactor: obj.metalness ?? 0,
         roughnessFactor: obj.roughness ?? 0.5,
       },
-      alphaMode: (obj.transparent && (obj.opacity ?? 1) < 1) ? "BLEND" : "OPAQUE",
+      alphaMode: obj.transparent && (obj.opacity ?? 1) < 1 ? "BLEND" : "OPAQUE",
       doubleSided: false,
     };
     const baseTex = getTexIdx(obj.texture);
@@ -311,7 +380,8 @@ async function buildDocument(): Promise<any | null> {
       mat.pbrMetallicRoughness.baseColorFactor = [1, 1, 1, obj.opacity ?? 1.0];
     }
     const mrTex = getTexIdx(obj.roughnessMap ?? obj.metalnessMap);
-    if (mrTex !== undefined) mat.pbrMetallicRoughness.metallicRoughnessTexture = { index: mrTex };
+    if (mrTex !== undefined)
+      mat.pbrMetallicRoughness.metallicRoughnessTexture = { index: mrTex };
     const normTex = getTexIdx(obj.normalMap);
     if (normTex !== undefined) mat.normalTexture = { index: normTex };
     if (obj.emissiveColor?.some((v) => v > 0) || obj.emissiveMap) {
@@ -329,33 +399,86 @@ async function buildDocument(): Promise<any | null> {
     const bv = bufferViews.length;
 
     // POSITION
-    bufferViews.push({ buffer: 0, byteOffset: prim.posByteOffset, byteLength: prim.posCount * 3 * 4, target: 34962 });
-    accessors.push({ bufferView: bv, componentType: 5126, count: prim.posCount, type: "VEC3", min: prim.posMin, max: prim.posMax });
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: prim.posByteOffset,
+      byteLength: prim.posCount * 3 * 4,
+      target: 34962,
+    });
+    accessors.push({
+      bufferView: bv,
+      componentType: 5126,
+      count: prim.posCount,
+      type: "VEC3",
+      min: prim.posMin,
+      max: prim.posMax,
+    });
 
     // NORMAL
-    bufferViews.push({ buffer: 0, byteOffset: prim.normByteOffset, byteLength: prim.posCount * 3 * 4, target: 34962 });
-    accessors.push({ bufferView: bv + 1, componentType: 5126, count: prim.posCount, type: "VEC3" });
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: prim.normByteOffset,
+      byteLength: prim.posCount * 3 * 4,
+      target: 34962,
+    });
+    accessors.push({
+      bufferView: bv + 1,
+      componentType: 5126,
+      count: prim.posCount,
+      type: "VEC3",
+    });
 
     // TEXCOORD_0
     let texAccIdx: number | undefined;
     if (prim.uvByteOffset !== undefined && prim.uvCount > 0) {
-      bufferViews.push({ buffer: 0, byteOffset: prim.uvByteOffset, byteLength: prim.uvCount * 2 * 4, target: 34962 });
-      accessors.push({ bufferView: bv + 2, componentType: 5126, count: prim.uvCount, type: "VEC2" });
+      bufferViews.push({
+        buffer: 0,
+        byteOffset: prim.uvByteOffset,
+        byteLength: prim.uvCount * 2 * 4,
+        target: 34962,
+      });
+      accessors.push({
+        bufferView: bv + 2,
+        componentType: 5126,
+        count: prim.uvCount,
+        type: "VEC2",
+      });
       texAccIdx = accessors.length - 1;
     }
 
     // INDEX
     const idxBv = bufferViews.length;
-    bufferViews.push({ buffer: 0, byteOffset: prim.idxByteOffset, byteLength: prim.idxCount * 4, target: 34963 });
-    accessors.push({ bufferView: idxBv, componentType: 5125, count: prim.idxCount, type: "SCALAR" });
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: prim.idxByteOffset,
+      byteLength: prim.idxCount * 4,
+      target: 34963,
+    });
+    accessors.push({
+      bufferView: idxBv,
+      componentType: 5125,
+      count: prim.idxCount,
+      type: "SCALAR",
+    });
 
     const attrs: Record<string, number> = { POSITION: bv, NORMAL: bv + 1 };
     if (texAccIdx !== undefined) attrs.TEXCOORD_0 = texAccIdx;
 
-    meshes.push({ primitives: [{ attributes: attrs, indices: accessors.length - 1, material: getMatIdx(prim.obj) }] });
+    meshes.push({
+      primitives: [
+        {
+          attributes: attrs,
+          indices: accessors.length - 1,
+          material: getMatIdx(prim.obj),
+        },
+      ],
+    });
     nodes.push({
-      name: prim.obj.name, mesh: meshes.length - 1,
-      translation: prim.obj.position, rotation: prim.obj.quaternion, scale: prim.obj.scale,
+      name: prim.obj.name,
+      mesh: meshes.length - 1,
+      translation: prim.obj.position,
+      rotation: prim.obj.quaternion,
+      scale: prim.obj.scale,
     });
   }
 
@@ -363,11 +486,18 @@ async function buildDocument(): Promise<any | null> {
     asset: { version: "2.0", generator: "B3Sync" },
     scene: 0,
     scenes: [{ nodes: nodes.map((_, i) => i) }],
-    nodes, meshes, accessors, bufferViews,
+    nodes,
+    meshes,
+    accessors,
+    bufferViews,
     buffers: [{ byteLength: binLength }],
   };
   if (materials.length > 0) gltfJson.materials = materials;
-  if (textures.length > 0) { gltfJson.textures = textures; gltfJson.images = images; gltfJson.samplers = samplers; }
+  if (textures.length > 0) {
+    gltfJson.textures = textures;
+    gltfJson.images = images;
+    gltfJson.samplers = samplers;
+  }
 
   // ------------------------------------------------------------------
   // Use gltf-transform's readJSON — no manual GLB packing needed
@@ -375,7 +505,7 @@ async function buildDocument(): Promise<any | null> {
   const io = new WebIO().registerExtensions(KHRONOS_EXTENSIONS);
   const doc = await io.readJSON({
     json: gltfJson,
-    resources: { "buffer.bin": bufferBin },
+    resources: { "@glb.bin": bufferBin },
   });
   return doc;
 }
@@ -419,7 +549,9 @@ export async function downloadGLB(): Promise<void> {
 
     const optimized = await io.writeBinary(doc);
 
-    const blob = new Blob([optimized as BlobPart], { type: "model/gltf-binary" });
+    const blob = new Blob([optimized as BlobPart], {
+      type: "model/gltf-binary",
+    });
     const url = URL.createObjectURL(blob);
     const a = window.document.createElement("a");
     a.href = url;
