@@ -17,15 +17,28 @@ export function BlenderReceiver() {
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
         <div className="w-full h-full">
-          <div className="w-full h-1/2">
-            <div>Sync</div>
+          <div
+            className="text-xs flex items-center justify-center"
+            style={{ height: "20px" }}
+          >
+            Blender Canvas
+          </div>
+          <div className="w-full" style={{ height: `calc(50% - 20px)` }}>
             <CanvasGPU>
               <SyncViewer />
               <CameraSync />
             </CanvasGPU>
           </div>
-          <div className="w-full h-1/2 border-t border-border">
-            <div>Production</div>
+          <div
+            className="text-xs flex items-center justify-center"
+            style={{ height: `calc(20px)` }}
+          >
+            Production Canvas
+          </div>
+          <div
+            className="w-full border-t border-border"
+            style={{ height: `calc(50% - 20px)` }}
+          >
             <OutputPreview />
           </div>
         </div>
