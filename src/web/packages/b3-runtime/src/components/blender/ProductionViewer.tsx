@@ -265,8 +265,7 @@ async function loadProductionScene(
 
     const opacity = obj.opacity ?? 1;
     const alphaTest = obj.alphaTest ?? 0;
-    const needsBlend = obj.transparent && opacity < 1;
-    const needsClip = alphaTest > 0;
+    const isTransparent = obj.transparent === true;
 
     const mat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(
@@ -285,12 +284,13 @@ async function loadProductionScene(
         : null,
       normalMap: obj.normalMap ? (textureMap.get(obj.normalMap) ?? null) : null,
       side: THREE.FrontSide,
-      // Alpha
-      transparent: needsBlend,
-      opacity,
-      alphaTest: needsClip ? alphaTest : 0,
-      depthWrite: !needsBlend,
     });
+
+    // Match tslMaterialBuilder: pass transparent directly,
+    // only set opacity/alphaTest when non-default
+    mat.transparent = isTransparent;
+    if (opacity < 1.0) mat.opacity = opacity;
+    if (alphaTest > 0) mat.alphaTest = alphaTest;
 
     loadedObjects.push({
       name: obj.name,
