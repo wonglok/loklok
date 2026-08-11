@@ -382,7 +382,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
       />
 
       <OrbitControls makeDefault />
-      <gridHelper args={[20, 20, "#333", "#222"]} />
+      {/* <gridHelper args={[20, 20, "#333", "#222"]} /> */}
     </>
   );
 }
