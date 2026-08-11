@@ -75,3 +75,25 @@ export interface OpfsCapabilities {
   /** createImageBitmap AVIF decode support. */
   avifDecode: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Tree enumeration types — used by the OPFS browser UI
+// ---------------------------------------------------------------------------
+
+/** A single node in the OPFS directory tree. */
+export interface OpfsTreeNode {
+  name: string;
+  kind: "file" | "dir";
+  /** Size in bytes (0 for directories — use `size` on children via `totalSize`). */
+  size: number;
+  children?: OpfsTreeNode[];
+}
+
+/** Top-level summary returned by listTree(). */
+export interface OpfsTree {
+  root: OpfsTreeNode;
+  /** Total bytes under current-view (recursive). */
+  rawTotal: number;
+  /** Total bytes under current-optimised-view (recursive). */
+  optimisedTotal: number;
+}

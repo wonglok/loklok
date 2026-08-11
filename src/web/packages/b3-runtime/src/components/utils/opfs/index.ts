@@ -35,4 +35,6 @@ export type {
   GeometryEntry,
   GeometryConfig,
   OpfsCapabilities,
+  OpfsTreeNode,
+  OpfsTree,
 } from "./types";

@@ -5,6 +5,7 @@ import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBlenderSyncStore } from "../stores/blenderSyncStore";
 import { opfs, opfsOptimiser } from "../utils/opfs";
+import { OpfsBrowser } from "./OpfsBrowser";
 import type { ConnectionState } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,7 @@ export function Sidebar() {
   const [snapshotStatus, setSnapshotStatus] = useState<
     "idle" | "saving" | "optimising" | "done" | "error"
   >("idle");
+  const [snapshotVersion, setSnapshotVersion] = useState(0);
 
   const takeSnapshot = async () => {
     if (!isConnected) return;
@@ -186,6 +188,7 @@ export function Sidebar() {
       await opfsOptimiser.optimise();
 
       setSnapshotStatus("done");
+      setSnapshotVersion((v) => v + 1);
       setTimeout(() => setSnapshotStatus("idle"), 2000);
     } catch (err) {
       console.error("[B3Sync] Snapshot failed:", err);
@@ -510,6 +513,11 @@ export function Sidebar() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ---- OPFS Browser ---- */}
+      <div className="px-3.5 py-2.5 border-t border-border">
+        <OpfsBrowser refreshKey={snapshotVersion} />
       </div>
 
       {/* ---- Footer ---- */}

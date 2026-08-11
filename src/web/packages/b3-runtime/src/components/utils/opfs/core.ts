@@ -18,6 +18,8 @@ import type {
   GeometryEntry,
   GeometryConfig,
   OpfsCapabilities,
+  OpfsTreeNode,
+  OpfsTree,
 } from "./types";
 import type { SceneData, ImageData, TextureData, GeoBuffer, CameraData, LightData } from "../../types/blenderTypes";
 
@@ -462,6 +464,45 @@ export class OpfsFS {
     await this.clearCurrentView();
     await this.clearOptimisedView();
   }
+
+  // ------------------------------------------------------------------
+  // Tree enumeration — for the OPFS browser UI
+  // ------------------------------------------------------------------
+
+  /**
+   * Walk the OPFS directory tree and return a structured listing.
+   * Includes total byte counts for raw and optimised views.
+   */
+  async listTree(): Promise<OpfsTree> {
+    const root = await this.init();
+    const tree: OpfsTreeNode = {
+      name: "OPFS",
+      kind: "dir",
+      size: 0,
+      children: [],
+    };
+
+    let rawTotal = 0;
+    let optimisedTotal = 0;
+
+    // Walk current-view
+    if (await dirExists(root, "current-view")) {
+      const cvDir = await root.getDirectoryHandle("current-view");
+      const cvNode = await walkDir(cvDir, "current-view");
+      rawTotal = cvNode.size;
+      tree.children!.push(cvNode);
+    }
+
+    // Walk current-optimised-view
+    if (await dirExists(root, "current-optimised-view")) {
+      const ovDir = await root.getDirectoryHandle("current-optimised-view");
+      const ovNode = await walkDir(ovDir, "current-optimised-view");
+      optimisedTotal = ovNode.size;
+      tree.children!.push(ovNode);
+    }
+
+    return { root: tree, rawTotal, optimisedTotal };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +524,46 @@ function mimeToExt(mime: string): string {
 /** Replace characters that are invalid in file names. */
 function sanitiseName(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, "_");
+}
+
+/** Recursively walk an OPFS directory, building a tree node with sizes. */
+async function walkDir(
+  handle: FileSystemDirectoryHandle,
+  name: string,
+): Promise<OpfsTreeNode> {
+  const node: OpfsTreeNode = {
+    name,
+    kind: "dir",
+    size: 0,
+    children: [],
+  };
+
+  for await (const [childName, childHandle] of (handle as any).entries()) {
+    if (childHandle.kind === "file") {
+      const file = await (childHandle as FileSystemFileHandle).getFile();
+      node.size += file.size;
+      node.children!.push({
+        name: childName,
+        kind: "file",
+        size: file.size,
+      });
+    } else {
+      const childNode = await walkDir(
+        childHandle as FileSystemDirectoryHandle,
+        childName,
+      );
+      node.size += childNode.size;
+      node.children!.push(childNode);
+    }
+  }
+
+  // Sort: directories first, then files, each alphabetically
+  node.children!.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "dir" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return node;
 }
 
 // ---------------------------------------------------------------------------
