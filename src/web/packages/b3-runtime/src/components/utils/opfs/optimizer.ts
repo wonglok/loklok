@@ -6,14 +6,12 @@
 //
 // Optimisation pipeline:
 //   1. Textures    → WebP re-encode (via OffscreenCanvas, universal support)
-//   2. HDR         → KTX2 (GPU-native, full HDR via UASTC)
-//   3. Geometry    → Draco-compressed .bin (via draco3d WASM)
-//   4. Scene JSON  → Copy-through with updated references
+//   2. HDR         → Raw copy (no compression — preserves float precision)
+//   3. Geometry    → Deduplicate + Draco-compress (via draco3d WASM)
+//   4. Scene JSON  → Copy-through with instance groups + updated references
 // ---------------------------------------------------------------------------
 
 import draco3d from "draco3d";
-import { DataTexture, RGBAFormat, FloatType } from "three";
-import { KTX2Exporter } from "three/addons/exporters/KTX2Exporter.js";
 import JSZip from "jszip";
 
 import type {
@@ -140,30 +138,56 @@ function computeScaledSize(
 }
 
 // ---------------------------------------------------------------------------
-// HDR → KTX2 (GPU-native, full dynamic range via UASTC)
+// Geometry fingerprinting — for deduplication / instancing
 // ---------------------------------------------------------------------------
 
-async function hdrToKTX2(
-  pixels: ArrayBuffer,
-  width: number,
-  height: number,
-): Promise<Uint8Array> {
-  const floats = new Float32Array(pixels);
+/**
+ * Generate a lightweight fingerprint for a geometry buffer.
+ * Uses vertex/index counts, bounding box, and sampled values so identical
+ * meshes produce the same hash without hashing every byte.
+ */
+function hashGeometry(
+  vertices: Float32Array,
+  indices: Uint32Array,
+  uvs?: Float32Array,
+): string {
+  // Bounding box
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < vertices.length; i += 3) {
+    if (vertices[i] < minX) minX = vertices[i];
+    if (vertices[i + 1] < minY) minY = vertices[i + 1];
+    if (vertices[i + 2] < minZ) minZ = vertices[i + 2];
+    if (vertices[i] > maxX) maxX = vertices[i];
+    if (vertices[i + 1] > maxY) maxY = vertices[i + 1];
+    if (vertices[i + 2] > maxZ) maxZ = vertices[i + 2];
+  }
 
-  // DataTexture from the raw Float32 RGBA pixels — no tonemap needed
-  const texture = new DataTexture(floats, width, height, RGBAFormat, FloatType);
-  texture.needsUpdate = true;
+  // Sample first few vertices + indices for collision resistance
+  const vSample: number[] = [];
+  for (let i = 0; i < Math.min(24, vertices.length); i++) {
+    vSample.push(vertices[i]);
+  }
+  const iSample: number[] = [];
+  for (let i = 0; i < Math.min(24, indices.length); i++) {
+    iSample.push(indices[i]);
+  }
 
-  const exporter = new KTX2Exporter();
-  const ktx2 = await exporter.parse(texture);
+  const tokens = [
+    vertices.length,
+    indices.length,
+    uvs ? uvs.length : 0,
+    minX.toFixed(4), minY.toFixed(4), minZ.toFixed(4),
+    maxX.toFixed(4), maxY.toFixed(4), maxZ.toFixed(4),
+    ...vSample.map((v) => v.toFixed(4)),
+    ...iSample,
+  ];
 
-  texture.dispose();
-
-  return ktx2;
+  return tokens.join("|");
 }
 
 // ---------------------------------------------------------------------------
-// Draco geometry compression — via Three.js DRACOExporter
+// Draco geometry compression — via draco3d WASM
 // ---------------------------------------------------------------------------
 
 const DRACO_WASM_URL = "/draco/";
@@ -332,17 +356,9 @@ export class OpfsOptimiser {
 
       try {
         const hdrOutDir = await ensureDir(outRoot, "hdr");
-        const ktx2 = await hdrToKTX2(
-          hdrPixels,
-          hdrConfig.width,
-          hdrConfig.height,
-        );
-        await writeBinary(hdrOutDir, "data.ktx2", ktx2.buffer as ArrayBuffer);
-        await writeJSON(hdrOutDir, "config.json", {
-          ...hdrConfig,
-          format: "image/ktx2",
-          encoding: "uastc-hdr",
-        });
+        // Copy raw Float32 HDR — no compression needed (preserves full precision)
+        await writeBinary(hdrOutDir, "data.bin", hdrPixels);
+        await writeJSON(hdrOutDir, "config.json", hdrConfig);
       } catch (err) {
         console.warn("[OPFS Optimiser] HDR skipped:", err);
       }
@@ -350,7 +366,7 @@ export class OpfsOptimiser {
       onProgress?.({ stage: "hdr", current: 1, total: 1 });
     }
 
-    // ---- Geometry (Draco via Three.js DRACOExporter) ----
+    // ---- Geometry (dedup + Draco) ----
     const geoManifest = await (async () => {
       try {
         const d = await ensureDir(root, "current-view/geometry");
@@ -361,25 +377,59 @@ export class OpfsOptimiser {
     })();
 
     const geoEntries = geoManifest ?? [];
-    if (geoEntries.length > 0) {
-      onProgress?.({ stage: "geometry", current: 0, total: geoEntries.length });
 
-      for (let i = 0; i < geoEntries.length; i++) {
-        const entry = geoEntries[i];
+    // ----- Phase 1: deduplicate geometry via fingerprinting -----
+    // hashGeo -> canonical name (first object with that geometry)
+    const geoCanonical = new Map<string, string>();
+    // object name -> canonical name
+    const geoAlias = new Map<string, string>();
+    // canonical name -> instance names[]
+    const instanceGroups = new Map<string, string[]>();
+
+    for (const entry of geoEntries) {
+      const geo = await opfs.readGeometry(entry.name);
+      if (!geo) continue;
+
+      const hash = hashGeometry(geo.vertices, geo.indices, geo.uvs);
+
+      if (geoCanonical.has(hash)) {
+        const canon = geoCanonical.get(hash)!;
+        geoAlias.set(entry.name, canon);
+        instanceGroups.get(canon)!.push(entry.name);
+      } else {
+        geoCanonical.set(hash, entry.name);
+        geoAlias.set(entry.name, entry.name);
+        instanceGroups.set(entry.name, [entry.name]);
+      }
+    }
+
+    const uniqueGeos = [...new Set(geoAlias.values())];
+    const instanceGroupData: Record<string, { geometry: string; objects: string[] }> = {};
+
+    for (const [canon, instances] of instanceGroups) {
+      if (instances.length > 1) {
+        instanceGroupData[canon] = { geometry: canon, objects: instances };
+      }
+    }
+
+    // ----- Phase 2: compress only unique geometries -----
+    if (uniqueGeos.length > 0) {
+      onProgress?.({ stage: "geometry", current: 0, total: uniqueGeos.length });
+
+      for (let i = 0; i < uniqueGeos.length; i++) {
+        const name = uniqueGeos[i];
         onProgress?.({
           stage: "geometry",
           current: i,
-          total: geoEntries.length,
+          total: uniqueGeos.length,
         });
 
         try {
-          const geo = await opfs.readGeometry(entry.name);
+          const geo = await opfs.readGeometry(name);
           if (!geo) continue;
 
-          const geoOutDir = await ensureDir(
-            outRoot,
-            `geometry/${sanitiseName(entry.name)}`,
-          );
+          const safeName = sanitiseName(name);
+          const geoOutDir = await ensureDir(outRoot, `geometry/${safeName}`);
 
           try {
             const dracoBuf = await compressGeometryDraco(
@@ -389,21 +439,12 @@ export class OpfsOptimiser {
             );
             await writeBinary(geoOutDir, "draco.bin", dracoBuf);
           } catch (err) {
-            // Draco failed — copy raw as fallback
             console.warn(
-              `[OPFS Optimiser] Draco failed for "${entry.name}", storing raw:`,
+              `[OPFS Optimiser] Draco failed for "${name}", storing raw:`,
               err,
             );
-            await writeBinary(
-              geoOutDir,
-              "vertices.bin",
-              sliceBuffer(geo.vertices),
-            );
-            await writeBinary(
-              geoOutDir,
-              "indices.bin",
-              sliceBuffer(geo.indices),
-            );
+            await writeBinary(geoOutDir, "vertices.bin", sliceBuffer(geo.vertices));
+            await writeBinary(geoOutDir, "indices.bin", sliceBuffer(geo.indices));
             if (geo.uvs) {
               await writeBinary(geoOutDir, "uvs.bin", sliceBuffer(geo.uvs));
             }
@@ -418,29 +459,43 @@ export class OpfsOptimiser {
           await writeJSON(geoOutDir, "config.json", config);
         } catch (err) {
           console.warn(
-            `[OPFS Optimiser] Geometry "${entry.name}" skipped:`,
+            `[OPFS Optimiser] Geometry "${name}" skipped:`,
             err,
           );
         }
       }
 
       const geoOutManifestDir = await ensureDir(outRoot, "geometry");
-      await writeJSON(geoOutManifestDir, "manifest.json", geoEntries);
+      await writeJSON(geoOutManifestDir, "manifest.json", uniqueGeos.map((n) => ({ name: n })));
 
       onProgress?.({
         stage: "geometry",
-        current: geoEntries.length,
-        total: geoEntries.length,
+        current: uniqueGeos.length,
+        total: uniqueGeos.length,
       });
     }
 
-    // ---- Cameras, Lights, Scene (copy-through) ----
-    onProgress?.({ stage: "meta", current: 0, total: 3 });
+    // ----- Phase 3: update scene.json with alias + instance group info -----
+    const rawScene = await opfs.readScene();
+    if (rawScene) {
+      // Rewrite object geometry references to canonical names
+      const aliasedObjects = rawScene.objects.map((obj) => ({
+        ...obj,
+        geometry: geoAlias.get(obj.name) ?? obj.name,
+      }));
 
-    const scene = await opfs.readScene();
-    if (scene) {
+      const scene = {
+        ...rawScene,
+        objects: aliasedObjects,
+        instanceGroups: Object.keys(instanceGroupData).length > 0
+          ? instanceGroupData
+          : undefined,
+      };
       await writeJSON(outRoot, "scene.json", scene);
     }
+
+    // ---- Cameras, Lights (copy-through) ----
+    onProgress?.({ stage: "meta", current: 0, total: 3 });
 
     const cameras = await opfs.readCameras();
     if (cameras.length > 0) {

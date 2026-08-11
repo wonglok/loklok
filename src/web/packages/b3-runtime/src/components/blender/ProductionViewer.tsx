@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
-import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import JSZip from "jszip";
 import draco3d from "draco3d";
 
@@ -31,7 +30,10 @@ interface ProductionScene {
   objects: LoadedObject[];
   lights: LightData[];
   cameras: CameraData[];
-  envTexture: THREE.Texture | null;
+  /** Raw Float32 HDR pixel buffer — processed to PMREM inside Canvas. */
+  hdrBytes: ArrayBuffer | null;
+  hdrWidth: number;
+  hdrHeight: number;
   hdrIntensity: number;
 }
 
@@ -152,40 +154,23 @@ async function loadProductionScene(
     ? JSON.parse(await lightsJson.async("text"))
     : [];
 
-  // KTX2 HDR environment
-  let envTexture: THREE.Texture | null = null;
+  // HDR environment — extract raw Float32 bytes (PMREM is created inside Canvas)
+  let hdrBytes: ArrayBuffer | null = null;
+  let hdrWidth = 0;
+  let hdrHeight = 0;
   let hdrIntensity = 1.0;
 
   const hdrConfigFile = zip.file("hdr/config.json");
   if (hdrConfigFile) {
     const hdrConfig = JSON.parse(await hdrConfigFile.async("text"));
     hdrIntensity = hdrConfig.intensity ?? 1.0;
+    hdrWidth = hdrConfig.width ?? 0;
+    hdrHeight = hdrConfig.height ?? 0;
   }
 
-  const ktx2File = zip.file("hdr/data.ktx2");
-  if (ktx2File) {
-    const ktx2Bytes = await ktx2File.async("arraybuffer");
-    const blob = new Blob([ktx2Bytes], { type: "image/ktx2" });
-    const url = URL.createObjectURL(blob);
-
-    const ktx2Loader = new KTX2Loader();
-    ktx2Loader.setTranscoderPath("/basis/");
-    // KTX2Loader only supports URL loading, not direct parse — use loadAsync
-    envTexture = await new Promise<THREE.Texture>((resolve, reject) => {
-      ktx2Loader.load(
-        url,
-        (tex) => {
-          URL.revokeObjectURL(url);
-          resolve(tex);
-        },
-        undefined,
-        reject,
-      );
-    });
-    envTexture.mapping = THREE.EquirectangularReflectionMapping;
-    envTexture.colorSpace = THREE.SRGBColorSpace;
-    // HDR KTX2 textures need to be treated as linear for environment
-    envTexture.colorSpace = THREE.LinearSRGBColorSpace;
+  const hdrBinFile = zip.file("hdr/data.bin");
+  if (hdrBinFile) {
+    hdrBytes = await hdrBinFile.async("arraybuffer");
   }
 
   // Build objects
@@ -322,7 +307,9 @@ async function loadProductionScene(
     objects: loadedObjects,
     lights,
     cameras,
-    envTexture,
+    hdrBytes,
+    hdrWidth,
+    hdrHeight,
     hdrIntensity,
   };
 }
@@ -332,13 +319,58 @@ async function loadProductionScene(
 // ---------------------------------------------------------------------------
 
 function SceneContent({ scene }: { scene: ProductionScene }) {
+  const gl = useThree((s) => s.gl);
+
+  // Build PMREM from raw Float32 HDR inside the Canvas WebGL context
+  const envMap = useMemo(() => {
+    if (!scene.hdrBytes || scene.hdrWidth === 0 || scene.hdrHeight === 0) {
+      return null;
+    }
+
+    // Guard: Float32Array requires byteLength to be a multiple of 4.
+    // Truncate any trailing bytes from the zip-extracted buffer.
+    const byteLen = Math.floor(scene.hdrBytes.byteLength / 4) * 4;
+    const expectedLen = scene.hdrWidth * scene.hdrHeight * 4 * 4;
+
+    if (byteLen < expectedLen) {
+      console.warn(
+        `[ProductionViewer] HDR buffer size mismatch: got ${byteLen} bytes, ` +
+        `expected ${expectedLen} (${scene.hdrWidth}×${scene.hdrHeight})`,
+      );
+    }
+
+    const safeLen = Math.min(byteLen, expectedLen);
+    const hdrTex = new THREE.DataTexture(
+      new Float32Array(scene.hdrBytes, 0, safeLen / 4),
+      scene.hdrWidth,
+      scene.hdrHeight,
+      THREE.RGBAFormat,
+      THREE.FloatType,
+    );
+    hdrTex.needsUpdate = true;
+    hdrTex.mapping = THREE.EquirectangularReflectionMapping;
+    hdrTex.colorSpace = THREE.LinearSRGBColorSpace;
+    hdrTex.minFilter = THREE.LinearFilter;
+    hdrTex.magFilter = THREE.LinearFilter;
+    hdrTex.generateMipmaps = false;
+
+    const pmrem = new THREE.PMREMGenerator(gl);
+    pmrem.compileEquirectangularShader();
+    const env = pmrem.fromEquirectangular(hdrTex).texture;
+    hdrTex.dispose();
+    pmrem.dispose();
+
+    return env;
+  }, [scene.hdrBytes, scene.hdrWidth, scene.hdrHeight, gl]);
+
   return (
     <>
       {/* Environment */}
-      {scene.envTexture && (
+      {envMap && (
         <Environment
-          map={scene.envTexture}
+          map={envMap}
           environmentIntensity={scene.hdrIntensity}
+          background
         />
       )}
 
@@ -533,7 +565,7 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
       try {
         const scene = await loadProductionScene(zipBuffer);
         if (cancelled) return;
-        if (scene.objects.length === 0 && !scene.envTexture) {
+        if (scene.objects.length === 0 && !scene.hdrBytes) {
           setState({ status: "empty" });
         } else {
           setState({ status: "loaded", scene });
