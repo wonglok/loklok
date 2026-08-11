@@ -216,11 +216,11 @@ async function compressGeometryDraco(
     vertices,
   );
 
-  // TEXCOORD_0
+  // TEX_COORD
   if (uvs) {
     meshBuilder.AddFloatAttributeToMesh(
       mesh,
-      mod.TEXCOORD_0,
+      mod.TEX_COORD,
       uvs.length / 2,
       2,
       uvs,
@@ -231,12 +231,8 @@ async function compressGeometryDraco(
   const numFaces = indices.length / 3;
   meshBuilder.AddFacesToMesh(mesh, numFaces, new Uint32Array(indices));
 
-  // Configure encoder
-  encoder.SetSpeedOptions(5, 5);
-  encoder.SetAttributeQuantization(mod.POSITION, 11);
-  if (uvs) {
-    encoder.SetAttributeQuantization(mod.TEXCOORD_0, 10);
-  }
+  // Configure encoder — lossless (no attribute quantization)
+  encoder.SetSpeedOptions(3, 3);
   encoder.SetEncodingMethod(mod.MESH_EDGEBREAKER_ENCODING);
 
   // Encode

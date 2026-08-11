@@ -4,14 +4,11 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
+import { HDRLoader } from "three/examples/jsm/Addons.js";
 import JSZip from "jszip";
 import draco3d from "draco3d";
 
-import type {
-  SceneData,
-  CameraData,
-  LightData,
-} from "../types/blenderTypes";
+import type { SceneData, CameraData, LightData } from "../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,10 +27,8 @@ interface ProductionScene {
   objects: LoadedObject[];
   lights: LightData[];
   cameras: CameraData[];
-  /** Raw Float32 HDR pixel buffer — processed to PMREM inside Canvas. */
+  /** Radiance RGBE HDR buffer — decoded via HDRLoader inside Canvas. */
   hdrBytes: ArrayBuffer | null;
-  hdrWidth: number;
-  hdrHeight: number;
   hdrIntensity: number;
 }
 
@@ -60,7 +55,10 @@ async function decodeDraco(
 
   const decoder = new mod.Decoder();
   const decoderBuffer = new mod.DecoderBuffer();
-  decoderBuffer.Init(new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), bytes.byteLength);
+  decoderBuffer.Init(
+    new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    bytes.byteLength,
+  );
 
   const geometryType = decoder.GetEncodedGeometryType(decoderBuffer);
   if (geometryType !== mod.TRIANGULAR_MESH) {
@@ -69,7 +67,9 @@ async function decodeDraco(
     if (geometryType === -1) {
       throw new Error(`Draco: invalid or corrupt data for "${objectName}"`);
     }
-    throw new Error(`Draco: unexpected geometry type ${geometryType} for "${objectName}"`);
+    throw new Error(
+      `Draco: unexpected geometry type ${geometryType} for "${objectName}"`,
+    );
   }
 
   const mesh = new mod.Mesh();
@@ -79,7 +79,9 @@ async function decodeDraco(
   if (!status.ok || mesh.num_faces() === 0) {
     mod.destroy(mesh);
     mod.destroy(decoder);
-    throw new Error(`Draco: decode failed for "${objectName}" (${status.error_string?.() ?? "unknown"})`);
+    throw new Error(
+      `Draco: decode failed for "${objectName}" (${status.error_string?.() ?? "unknown"})`,
+    );
   }
 
   // Indices
@@ -111,9 +113,9 @@ async function decodeDraco(
   for (let i = 0; i < numVertices * 3; i++) vertices[i] = posArray.GetValue(i);
   mod.destroy(posArray);
 
-  // TEXCOORD_0
+  // TEX_COORD
   let uvs: Float32Array | undefined;
-  const texAttrId = decoder.GetAttributeId(mesh, mod.TEXCOORD_0);
+  const texAttrId = decoder.GetAttributeId(mesh, mod.TEX_COORD);
   if (texAttrId >= 0) {
     const texAttr = decoder.GetAttribute(mesh, texAttrId);
     const numUVs = mesh.num_points();
@@ -154,18 +156,14 @@ async function loadProductionScene(
     ? JSON.parse(await lightsJson.async("text"))
     : [];
 
-  // HDR environment — extract raw Float32 bytes (PMREM is created inside Canvas)
+  // HDR environment (Radiance RGBE format — decoded via HDRLoader inside Canvas)
   let hdrBytes: ArrayBuffer | null = null;
-  let hdrWidth = 0;
-  let hdrHeight = 0;
   let hdrIntensity = 1.0;
 
   const hdrConfigFile = zip.file("hdr/config.json");
   if (hdrConfigFile) {
     const hdrConfig = JSON.parse(await hdrConfigFile.async("text"));
     hdrIntensity = hdrConfig.intensity ?? 1.0;
-    hdrWidth = hdrConfig.width ?? 0;
-    hdrHeight = hdrConfig.height ?? 0;
   }
 
   const hdrBinFile = zip.file("hdr/data.bin");
@@ -227,10 +225,7 @@ async function loadProductionScene(
         );
         geo.setIndex(new THREE.BufferAttribute(decoded.indices, 1));
         if (decoded.uvs) {
-          geo.setAttribute(
-            "uv",
-            new THREE.BufferAttribute(decoded.uvs, 2),
-          );
+          geo.setAttribute("uv", new THREE.BufferAttribute(decoded.uvs, 2));
         }
         geo.computeVertexNormals();
         geometryMap.set(entry.name, geo);
@@ -257,10 +252,7 @@ async function loadProductionScene(
         geometryMap.set(entry.name, geo);
       }
     } catch (err) {
-      console.warn(
-        `[ProductionViewer] Geometry "${entry.name}" skipped:`,
-        err,
-      );
+      console.warn(`[ProductionViewer] Geometry "${entry.name}" skipped:`, err);
     }
   }
 
@@ -278,16 +270,14 @@ async function loadProductionScene(
       ),
       roughness: obj.roughness ?? 0.5,
       metalness: obj.metalness ?? 0,
-      map: obj.texture ? textureMap.get(obj.texture) ?? null : null,
+      map: obj.texture ? (textureMap.get(obj.texture) ?? null) : null,
       roughnessMap: obj.roughnessMap
-        ? textureMap.get(obj.roughnessMap) ?? null
+        ? (textureMap.get(obj.roughnessMap) ?? null)
         : null,
       metalnessMap: obj.metalnessMap
-        ? textureMap.get(obj.metalnessMap) ?? null
+        ? (textureMap.get(obj.metalnessMap) ?? null)
         : null,
-      normalMap: obj.normalMap
-        ? textureMap.get(obj.normalMap) ?? null
-        : null,
+      normalMap: obj.normalMap ? (textureMap.get(obj.normalMap) ?? null) : null,
       transparent: hasAlpha,
       opacity: obj.opacity ?? 1,
       side: THREE.FrontSide,
@@ -308,8 +298,6 @@ async function loadProductionScene(
     lights,
     cameras,
     hdrBytes,
-    hdrWidth,
-    hdrHeight,
     hdrIntensity,
   };
 }
@@ -323,36 +311,14 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 
   // Build PMREM from raw Float32 HDR inside the Canvas WebGL context
   const envMap = useMemo(() => {
-    if (!scene.hdrBytes || scene.hdrWidth === 0 || scene.hdrHeight === 0) {
+    if (!scene.hdrBytes || scene.hdrBytes.byteLength === 0) {
       return null;
     }
 
-    // Guard: Float32Array requires byteLength to be a multiple of 4.
-    // Truncate any trailing bytes from the zip-extracted buffer.
-    const byteLen = Math.floor(scene.hdrBytes.byteLength / 4) * 4;
-    const expectedLen = scene.hdrWidth * scene.hdrHeight * 4 * 4;
-
-    if (byteLen < expectedLen) {
-      console.warn(
-        `[ProductionViewer] HDR buffer size mismatch: got ${byteLen} bytes, ` +
-        `expected ${expectedLen} (${scene.hdrWidth}×${scene.hdrHeight})`,
-      );
-    }
-
-    const safeLen = Math.min(byteLen, expectedLen);
-    const hdrTex = new THREE.DataTexture(
-      new Float32Array(scene.hdrBytes, 0, safeLen / 4),
-      scene.hdrWidth,
-      scene.hdrHeight,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
+    // HDR data is in Radiance RGBE format — use HDRLoader (same as SyncViewer)
+    const loader = new HDRLoader();
+    const hdrTex = loader.createDataTexture(scene.hdrBytes);
     hdrTex.needsUpdate = true;
-    hdrTex.mapping = THREE.EquirectangularReflectionMapping;
-    hdrTex.colorSpace = THREE.LinearSRGBColorSpace;
-    hdrTex.minFilter = THREE.LinearFilter;
-    hdrTex.magFilter = THREE.LinearFilter;
-    hdrTex.generateMipmaps = false;
 
     const pmrem = new THREE.PMREMGenerator(gl);
     pmrem.compileEquirectangularShader();
@@ -361,7 +327,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     pmrem.dispose();
 
     return env;
-  }, [scene.hdrBytes, scene.hdrWidth, scene.hdrHeight, gl]);
+  }, [scene.hdrBytes, gl]);
 
   return (
     <>
@@ -422,11 +388,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 }
 
 function LightFromData({ light }: { light: LightData }) {
-  const color = new THREE.Color(
-    light.color[0],
-    light.color[1],
-    light.color[2],
-  );
+  const color = new THREE.Color(light.color[0], light.color[1], light.color[2]);
 
   const position: [number, number, number] = light.position;
   const intensity = light.intensity;
@@ -580,7 +542,9 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [zipBuffer]);
 
   if (state.status === "loading") return <LoadingView />;
@@ -601,6 +565,7 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
         </Suspense>
+        {/* <Environment preset="lobby" background /> */}
       </Canvas>
     </div>
   );
