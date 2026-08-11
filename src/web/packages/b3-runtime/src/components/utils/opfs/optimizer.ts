@@ -86,8 +86,8 @@ interface WebPEncodeOptions {
 
 const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
   quality: 0.80,
-  maxWidth: 4096,
-  maxHeight: 4096,
+  maxWidth: 2048,
+  maxHeight: 2048,
 };
 
 async function encodeWebP(
