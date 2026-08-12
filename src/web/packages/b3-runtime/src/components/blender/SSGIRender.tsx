@@ -14,6 +14,8 @@ import {
   sample,
   packNormalToRGB,
   unpackRGBToNormal,
+  vec3,
+  bool,
 } from "three/tsl";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
@@ -167,15 +169,20 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     const gi = giPass.getGINode();
 
     const compositePass = vec4(
-      scenePassColor.rgb.mul(ao.r).add(scenePassDiffuse.rgb.mul(gi)),
+      scenePassColor.rgb.mul(ao.r).add(scenePassDiffuse.rgb.mul(gi.rgb)),
       scenePassColor.a,
     );
 
     // TRAA temporal anti-aliasing / denoising
-    const traaPass = traa(compositePass, scenePassDepth, scenePassVelocity, camera);
+    const traaPass = traa(
+      compositePass.rgba,
+      scenePassDepth,
+      scenePassVelocity,
+      camera,
+    );
 
     compositePassRef.current = compositePass;
-    traaPassRef.current = traaPass;
+    traaPassRef.current = traaPass.rgba;
 
     // Build pipeline
     const postProcessing = new THREE.RenderPipeline(gl);
@@ -197,8 +204,8 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     // Choose output: TRAA (temporal) or raw composite
     const useTemporal = node.useTemporalFiltering;
     pipeline.outputNode = useTemporal
-      ? traaPassRef.current
-      : compositePassRef.current;
+      ? vec4(traaPassRef.current.rgba)
+      : vec4(compositePassRef.current.rgba);
 
     pipeline.render();
   }, 1);

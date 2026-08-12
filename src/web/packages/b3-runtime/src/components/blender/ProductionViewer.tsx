@@ -409,7 +409,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         opacity={0.4}
       /> */}
 
-      <OrbitControls makeDefault />
+      {/* <OrbitControls makeDefault /> */}
       {/* <gridHelper args={[20, 20, "#333", "#222"]} /> */}
     </>
   );

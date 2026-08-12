@@ -33,7 +33,8 @@ export function BlenderReceiver() {
                   sliceCount: 2,
                   stepCount: 8,
                   giIntensity: 15,
-                  radius: 10,
+                  radius: 50,
+                  backfaceLighting: 1,
                 }}
               />
             </CanvasGPU>
@@ -49,12 +50,14 @@ export function BlenderReceiver() {
             style={{ height: `calc(50% - 20px)` }}
           >
             <OutputPreview>
+              <CameraSync />
               <SSGIRender
                 params={{
                   sliceCount: 2,
                   stepCount: 8,
                   giIntensity: 15,
-                  radius: 10,
+                  radius: 50,
+                  backfaceLighting: 1,
                 }}
               />
             </OutputPreview>

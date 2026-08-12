@@ -354,7 +354,12 @@ export function Sidebar() {
           </div>
           <button
             onClick={takeSnapshot}
-            disabled={!isConnected || snapshotStatus === "saving" || snapshotStatus === "optimising" || snapshotStatus === "packaging"}
+            disabled={
+              !isConnected ||
+              snapshotStatus === "saving" ||
+              snapshotStatus === "optimising" ||
+              snapshotStatus === "packaging"
+            }
             className={`
               w-full px-2.5 py-1.5 rounded flex items-center justify-center gap-1.5
               bg-surface-secondary border border-border
