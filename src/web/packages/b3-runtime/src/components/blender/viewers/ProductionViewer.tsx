@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense, ReactNode } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
+import { useState, useEffect, Suspense, ReactNode } from "react";
+import { useThree } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
-import { HDRLoader } from "three/examples/jsm/Addons.js";
 import JSZip from "jszip";
 import draco3d from "draco3d";
 
@@ -17,6 +15,7 @@ import type {
 } from "../../types/blenderTypes";
 import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
+import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
 import { CanvasGPU } from "../CanvasGPU";
 
 // ---------------------------------------------------------------------------
@@ -271,25 +270,15 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
-  // Build PMREM from raw Float32 HDR inside the Canvas WebGL context
-  const envMap = useMemo(() => {
-    if (!scene.hdrBytes || scene.hdrBytes.byteLength === 0) {
-      return null;
-    }
-
-    // HDR data is in Radiance RGBE format — use HDRLoader (same as SyncViewer)
-    const loader = new HDRLoader();
-    const hdrTex = loader.createDataTexture(scene.hdrBytes);
-    hdrTex.needsUpdate = true;
-
-    const pmrem = new THREE.PMREMGenerator(gl as any);
-    pmrem.compileEquirectangularShader();
-    const env = pmrem.fromEquirectangular(hdrTex).texture;
-    hdrTex.dispose();
-    pmrem.dispose();
-
-    return env;
-  }, [scene.hdrBytes, gl]);
+  // Apply HDR environment map (shared hook — same as SyncViewer)
+  useEnvironmentMap({
+    scene: threeScene,
+    renderer: gl,
+    hdrPixels: scene.hdrBytes,
+    intensity: scene.hdrIntensity,
+    background: true,
+    fallbackColor: "#f4f4f4",
+  });
 
   // Sync meshes via the shared hook — handles caching, InstancedMesh
   // batching, incremental updates, and cleanup.
@@ -373,15 +362,6 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 
   return (
     <>
-      {/* Environment */}
-      {envMap && (
-        <Environment
-          map={envMap}
-          environmentIntensity={scene.hdrIntensity}
-          background
-        />
-      )}
-
       {/* Lights from Blender */}
       {scene.lights.map((light) => (
         <LightFromData key={light.name} light={light} />

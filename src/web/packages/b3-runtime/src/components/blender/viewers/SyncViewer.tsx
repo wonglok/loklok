@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import * as THREE from "three/webgpu";
 import { useThree } from "@react-three/fiber";
 import { useBlenderStore } from "../../stores/blenderStore";
 import {
@@ -10,10 +9,10 @@ import {
   buildGeometryFromBuffer,
   computeMeshCacheKey,
 } from "../../utils/meshBuilder";
-import { HDRLoader } from "three/examples/jsm/Addons.js";
 import type { BlenderObject } from "../../types/blenderTypes";
 import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
+import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
 
 // ---------------------------------------------------------------------------
 // Viewer
@@ -76,40 +75,16 @@ export function SyncViewer() {
   const gl = useThree((r) => r.gl);
 
   // ------------------------------------------------------------------
-  // Apply HDR environment map (only when pixel data changes)
+  // Apply HDR environment map + intensity (shared hook)
   // ------------------------------------------------------------------
-  useEffect(() => {
-    const renderer = gl;
-    if (!renderer || !scene) return;
-
-    if (!hdrData || hdrData.width === 0) {
-      scene.environment = null;
-      scene.background = new THREE.Color("#f4f4f4");
-      return;
-    }
-
-    const hdrLoader = new HDRLoader();
-    const texture = hdrLoader.createDataTexture(hdrData.pixels);
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-
-    const pmremGenerator = new THREE.PMREMGenerator(renderer as any);
-    pmremGenerator.compileEquirectangularShader();
-    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
-
-    scene.environment = envMap;
-    scene.background = texture;
-
-    texture.dispose();
-    pmremGenerator.dispose();
-  }, [hdrData?.pixels.byteLength, scene, gl]);
-
-  // ------------------------------------------------------------------
-  // Apply environment intensity (updated independently — cheap, no PMREM rebuild)
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (!scene) return;
-    scene.environmentIntensity = hdrIntensity;
-  }, [hdrIntensity, scene]);
+  useEnvironmentMap({
+    scene: scene!,
+    renderer: gl,
+    hdrPixels: hdrData?.pixels,
+    intensity: hdrIntensity,
+    background: true,
+    fallbackColor: "#f4f4f4",
+  });
 
   // ------------------------------------------------------------------
   // Sync meshes from Blender data (with InstancedMesh batching)

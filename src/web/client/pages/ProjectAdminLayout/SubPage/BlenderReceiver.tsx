@@ -10,7 +10,7 @@ import {
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
-import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/SSGIRender";
+import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
 
 export function BlenderReceiver() {
   return (
