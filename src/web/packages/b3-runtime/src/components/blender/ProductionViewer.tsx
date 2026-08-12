@@ -282,7 +282,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     const hdrTex = loader.createDataTexture(scene.hdrBytes);
     hdrTex.needsUpdate = true;
 
-    const pmrem = new THREE.PMREMGenerator(gl);
+    const pmrem = new THREE.PMREMGenerator(gl as any);
     pmrem.compileEquirectangularShader();
     const env = pmrem.fromEquirectangular(hdrTex).texture;
     hdrTex.dispose();
