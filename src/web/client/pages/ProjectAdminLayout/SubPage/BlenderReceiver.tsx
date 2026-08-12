@@ -11,6 +11,7 @@ import {
 } from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
 import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
+import { ProductionScene } from "../../../../packages/b3-runtime/src/components/blender/viewers/ProductionViewer";
 
 export function BlenderReceiver() {
   return (
@@ -49,18 +50,7 @@ export function BlenderReceiver() {
             className="w-full border-t border-border"
             style={{ height: `calc(50% - 20px)` }}
           >
-            <OutputPreview>
-              <CameraSync />
-              <SSGIRender
-                params={{
-                  sliceCount: 2,
-                  stepCount: 8,
-                  giIntensity: 15,
-                  radius: 50,
-                  backfaceLighting: 1,
-                }}
-              />
-            </OutputPreview>
+            <OutputPreview></OutputPreview>
           </div>
         </div>
         <Sidebar></Sidebar>
@@ -152,7 +142,31 @@ function OutputPreview({ children }: { children?: ReactNode }) {
   }
 
   // Ready — render production view
-  return <ProductionViewer zipBuffer={zipBuffer}>{children}</ProductionViewer>;
+
+  return (
+    <>
+      <div className="w-full h-full">
+        <CanvasGPU>
+          <CameraSync />
+          <SSGIRender
+            params={{
+              sliceCount: 2,
+              stepCount: 8,
+              giIntensity: 15,
+              radius: 50,
+              backfaceLighting: 1,
+            }}
+          />
+
+          {zipBuffer && (
+            <ProductionScene zipBuffer={zipBuffer}></ProductionScene>
+          )}
+
+          {children}
+        </CanvasGPU>
+      </div>
+    </>
+  );
 }
 
 //

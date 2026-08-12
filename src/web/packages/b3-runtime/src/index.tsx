@@ -9,7 +9,11 @@ import {
   SyncViewer,
 } from "./components/blender/viewers/SyncViewer";
 import { OpfsBrowser } from "./components/blender/OpfsBrowser";
-import { ProductionViewer } from "./components/blender/viewers/ProductionViewer";
+import {
+  ProductionScene,
+  ProductionViewer,
+} from "./components/blender/viewers/ProductionViewer";
+// import { SSGIRender } from "./components/blender/canvas-units/SSGIRender";
 
 // components
 export {
@@ -21,24 +25,8 @@ export {
   RefreshButton,
   OpfsBrowser,
   ProductionViewer,
+  ProductionScene,
 };
-
-// pages
-
-export function ReceiverPage() {
-  return (
-    <div className="w-full h-full relative">
-      <div className="w-full h-full flex">
-        <Sidebar />
-        <BlenderConnection></BlenderConnection>
-        <CanvasGPU>
-          <SyncViewer />
-          <CameraSync />
-        </CanvasGPU>
-      </div>
-    </div>
-  );
-}
 
 // OPFS SDK
 export {
@@ -50,3 +38,54 @@ export {
 } from "./components/utils/opfs";
 
 //
+
+// examples
+
+// export function ProductionCanvas({ zipBuffer = null }) {
+//   return (
+//     <>
+//       <div className="w-full h-full">
+//         <CanvasGPU>
+//           <CameraSync />
+//           <SSGIRender
+//             params={{
+//               sliceCount: 2,
+//               stepCount: 8,
+//               giIntensity: 15,
+//               radius: 50,
+//               backfaceLighting: 1,
+//             }}
+//           />
+
+//           {zipBuffer && (
+//             <ProductionScene zipBuffer={zipBuffer}></ProductionScene>
+//           )}
+//         </CanvasGPU>
+//       </div>
+//     </>
+//   );
+// }
+
+// export function ReceiverCanvas() {
+//   return (
+//     <div className="w-full h-full relative">
+//       <div className="w-full h-full flex">
+//         <Sidebar />
+//         <BlenderConnection></BlenderConnection>
+//         <CanvasGPU>
+//           <SSGIRender
+//             params={{
+//               sliceCount: 2,
+//               stepCount: 8,
+//               giIntensity: 15,
+//               radius: 50,
+//               backfaceLighting: 1,
+//             }}
+//           />
+//           <SyncViewer />
+//           <CameraSync />
+//         </CanvasGPU>
+//       </div>
+//     </div>
+//   );
+// }

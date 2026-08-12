@@ -510,20 +510,81 @@ export function ProductionViewer({
 
   return (
     <div className="h-full w-full relative">
-      <CanvasGPU
-      // shadows
-      // camera={{ position: [5, 5, 5], fov: 50 }}
-      // gl={{
-      //   antialias: true,
-      //   toneMapping: THREE.ACESFilmicToneMapping,
-      //   toneMappingExposure: 1.0,
-      // }}
-      >
+      <CanvasGPU>
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
           {children}
         </Suspense>
       </CanvasGPU>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export function ProductionScene({
+  zipBuffer,
+  onStatus = () => null,
+  noSuspense = false,
+}: {
+  zipBuffer: ArrayBuffer;
+  onStatus?: any;
+  noSuspense?: boolean;
+}) {
+  const [state, setState] = useState<{
+    status: "loading" | "loaded" | "error" | "empty";
+    scene?: ProductionScene;
+    error?: string;
+  }>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!zipBuffer) {
+      return;
+    }
+
+    async function load() {
+      setState({ status: "loading" });
+      try {
+        const scene = await loadProductionScene(zipBuffer);
+        if (cancelled) return;
+        if (scene.objects.length === 0 && !scene.hdrBytes) {
+          setState({ status: "empty" });
+        } else {
+          setState({ status: "loaded", scene });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setState({
+          status: "error",
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [zipBuffer]);
+
+  useEffect(() => {
+    onStatus(state);
+  }, [state]);
+
+  if (state.status === "loading") return null;
+  if (state.status === "error") return null;
+  if (state.status === "empty") return null;
+
+  if (noSuspense) {
+    return <SceneContent scene={state.scene!} />;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <SceneContent scene={state.scene!} />
+    </Suspense>
   );
 }
