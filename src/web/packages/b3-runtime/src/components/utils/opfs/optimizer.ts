@@ -557,7 +557,11 @@ export class OpfsOptimiser {
 
     // Write to current-deployment
     const deployDir = await ensureDir(root, "current-deployment");
-    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const zipBlob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    });
     const zipBuffer = await zipBlob.arrayBuffer();
     await writeBinary(deployDir, "scene.zip", zipBuffer);
 
