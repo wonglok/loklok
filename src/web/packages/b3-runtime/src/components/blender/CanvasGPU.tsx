@@ -9,6 +9,7 @@ import * as THREE from "three/webgpu";
 import { Canvas, extend, type ThreeToJSXElements } from "@react-three/fiber";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import { useRef } from "react";
+import { SSGIRender } from "./SSGIRender";
 
 declare module "@react-three/fiber" {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -53,10 +54,13 @@ export const CanvasGPU: any = ({
           // shadows="soft"
           gl={async (glprops: any): Promise<any> => {
             const renderer = new THREE.WebGPURenderer({
-              alpha: true,
-              antialias: true,
               ...(glprops as any),
               ...props,
+
+              alpha: false,
+              antialias: false,
+              depth: false,
+              stencil: false,
 
               requiredLimits: {
                 maxColorAttachments: 24,

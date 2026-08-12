@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import JSZip from "jszip";
 import draco3d from "draco3d";
@@ -17,6 +17,7 @@ import type {
 } from "../types/blenderTypes";
 import { LightFromData } from "./LightFromData";
 import { useMeshSync } from "./useMeshSync";
+import { CanvasGPU } from "./CanvasGPU";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -482,7 +483,13 @@ function EmptyView() {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
+export function ProductionViewer({
+  zipBuffer,
+  children,
+}: {
+  zipBuffer: ArrayBuffer;
+  children?: ReactNode;
+}) {
   const [state, setState] = useState<{
     status: "loading" | "loaded" | "error" | "empty";
     scene?: ProductionScene;
@@ -523,7 +530,7 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
 
   return (
     <div className="h-full w-full relative">
-      <Canvas
+      <CanvasGPU
         shadows
         camera={{ position: [5, 5, 5], fov: 50 }}
         gl={{
@@ -534,8 +541,9 @@ export function ProductionViewer({ zipBuffer }: { zipBuffer: ArrayBuffer }) {
       >
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
+          {children}
         </Suspense>
-      </Canvas>
+      </CanvasGPU>
     </div>
   );
 }

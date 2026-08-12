@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { ProductionViewer, Sidebar } from "../../../../packages/b3-runtime/src";
 import { CameraSync } from "../../../../packages/b3-runtime/src/components/blender/CameraSync";
 import { CanvasGPU } from "../../../../packages/b3-runtime/src/components/blender/CanvasGPU";
@@ -10,6 +10,7 @@ import {
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
+import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/SSGIRender";
 
 export function BlenderReceiver() {
   return (
@@ -27,6 +28,14 @@ export function BlenderReceiver() {
             <CanvasGPU>
               <SyncViewer />
               <CameraSync />
+              <SSGIRender
+                params={{
+                  sliceCount: 2,
+                  stepCount: 8,
+                  giIntensity: 15,
+                  radius: 10,
+                }}
+              />
             </CanvasGPU>
           </div>
           <div
@@ -39,7 +48,16 @@ export function BlenderReceiver() {
             className="w-full border-t border-border"
             style={{ height: `calc(50% - 20px)` }}
           >
-            <OutputPreview />
+            <OutputPreview>
+              <SSGIRender
+                params={{
+                  sliceCount: 2,
+                  stepCount: 8,
+                  giIntensity: 15,
+                  radius: 10,
+                }}
+              />
+            </OutputPreview>
           </div>
         </div>
         <Sidebar></Sidebar>
@@ -52,7 +70,7 @@ export function BlenderReceiver() {
 // OutputPreview — loads the deployment zip from OPFS and renders it
 // ---------------------------------------------------------------------------
 
-function OutputPreview() {
+function OutputPreview({ children }: { children?: ReactNode }) {
   const deploymentVersion = useBlenderStore((s) => s.deploymentVersion);
   const [zipBuffer, setZipBuffer] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -131,7 +149,7 @@ function OutputPreview() {
   }
 
   // Ready — render production view
-  return <ProductionViewer zipBuffer={zipBuffer} />;
+  return <ProductionViewer zipBuffer={zipBuffer}>{children}</ProductionViewer>;
 }
 
 //
