@@ -168,12 +168,10 @@ export function SyncViewer() {
           pt.castShadow = true;
           pt.shadow.mapSize.width = 1024;
           pt.shadow.mapSize.height = 1024;
-          pt.shadow.camera.near = 0.1;
+          pt.shadow.camera.near = 0.01;
           pt.shadow.camera.far = l.distance || 50;
           pt.shadow.bias = -0.0001;
           pt.shadow.normalBias = 0.02;
-          pt.castShadow = true;
-          pt.receiveShadow = true;
           if (l.distance && l.distance > 0) pt.decay = 2;
           threeLight = pt;
 
@@ -184,13 +182,13 @@ export function SyncViewer() {
           sun.castShadow = true;
           sun.shadow.mapSize.width = 2048;
           sun.shadow.mapSize.height = 2048;
-          sun.shadow.camera.near = 0.1;
-          sun.shadow.camera.far = 100;
-          sun.shadow.camera.left = -20;
-          sun.shadow.camera.right = 20;
-          sun.shadow.camera.top = 20;
-          sun.shadow.camera.bottom = -20;
-          sun.shadow.bias = -0.0001;
+          sun.shadow.camera.near = 0.01;
+          sun.shadow.camera.far = 200;
+          sun.shadow.camera.left = -50;
+          sun.shadow.camera.right = 50;
+          sun.shadow.camera.top = 50;
+          sun.shadow.camera.bottom = -50;
+          sun.shadow.bias = -0.00005;
           sun.shadow.normalBias = 0.02;
           threeLight = sun;
           break;
