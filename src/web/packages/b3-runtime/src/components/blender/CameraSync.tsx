@@ -16,7 +16,6 @@ import { useMemo } from "react";
 export function CameraSync() {
   const cameraData = useBlenderStore((s) => s.cameraData);
   const selectedCamera = useBlenderStore((s) => s.selectedCamera);
-  const cameras = useBlenderStore((s) => s.cameras);
   const camera = useThree((s) => s.camera);
 
   const lo = useMemo(() => {
@@ -24,8 +23,8 @@ export function CameraSync() {
   }, []);
 
   useFrame(() => {
-    // Selected camera → first scene camera as default → viewport stream fallback
-    const activeCam = cameraData ?? selectedCamera ?? cameras[0];
+    // Selected scene camera wins; otherwise follow the live Blender viewport.
+    const activeCam = selectedCamera ?? cameraData;
     if (!activeCam) return;
 
     lo.position.set(
