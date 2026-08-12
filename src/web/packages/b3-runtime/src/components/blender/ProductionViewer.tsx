@@ -9,6 +9,7 @@ import JSZip from "jszip";
 import draco3d from "draco3d";
 
 import type { SceneData, CameraData, LightData } from "../types/blenderTypes";
+import { LightFromData } from "./LightFromData";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -403,64 +404,6 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
       {/* <gridHelper args={[20, 20, "#333", "#222"]} /> */}
     </>
   );
-}
-
-function LightFromData({ light }: { light: LightData }) {
-  const color = new THREE.Color(light.color[0], light.color[1], light.color[2]);
-
-  const position: [number, number, number] = light.position;
-  const intensity = light.intensity;
-
-  switch (light.type) {
-    case "SUN":
-      return (
-        <directionalLight
-          position={position}
-          intensity={intensity}
-          color={color}
-          castShadow={light.castShadow}
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-        />
-      );
-    case "POINT":
-      return (
-        <pointLight
-          position={position}
-          intensity={intensity}
-          color={color}
-          distance={light.distance ?? 0}
-          castShadow={light.castShadow}
-          shadow-intensity={1}
-        />
-      );
-    case "SPOT":
-      return (
-        <spotLight
-          position={position}
-          intensity={intensity}
-          color={color}
-          distance={light.distance ?? 0}
-          angle={light.coneAngle ?? Math.PI / 6}
-          penumbra={light.penumbra ?? 0.5}
-          castShadow={light.castShadow}
-        />
-      );
-    case "AREA":
-      return (
-        <rectAreaLight
-          position={position}
-          intensity={intensity}
-          color={color}
-          width={light.width ?? 1}
-          height={light.height ?? 1}
-        />
-      );
-    default:
-      return (
-        <pointLight position={position} intensity={intensity} color={color} />
-      );
-  }
 }
 
 // ---------------------------------------------------------------------------

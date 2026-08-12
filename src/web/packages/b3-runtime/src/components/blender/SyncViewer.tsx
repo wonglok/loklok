@@ -13,6 +13,7 @@ import {
 } from "../utils/meshBuilder";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
 import type { BlenderObject, GeoBuffer } from "../types/blenderTypes";
+import { LightFromData } from "./LightFromData";
 
 // ---------------------------------------------------------------------------
 // Module-level caches
@@ -97,7 +98,6 @@ export function SyncViewer() {
   const meshesRef = useRef<Map<string, CachedMesh>>(new Map());
   const instancedRef = useRef<Map<string, InstancedGroupEntry>>(new Map());
   const instanceSlotsRef = useRef<Map<string, InstanceSlot>>(new Map());
-  const lightsRef = useRef<THREE.Light[]>([]);
 
   const gl = useThree((r) => r.gl);
 
@@ -137,112 +137,10 @@ export function SyncViewer() {
     scene.environmentIntensity = hdrIntensity;
   }, [hdrIntensity, scene]);
 
-  // ------------------------------------------------------------------
-  // Sync lights from Blender data
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-
-    // Remove any previously synced lights from the scene
-    const prevLights = lightsRef.current;
-    for (const l of prevLights) {
-      scene.remove(l);
-    }
-    lightsRef.current = [];
-
-    // Blender energy (Watts) → Three.js intensity conversion.
-    // Multiply by 4π to convert radiant flux to luminous intensity,
-    // then divide by 25 to bring values into a practical range.
-    const ENERGY_SCALE = 1 / 10;
-
-    for (const l of lights) {
-      const color = new THREE.Color(l.color[0], l.color[1], l.color[2]);
-      const intensity = l.intensity * ENERGY_SCALE;
-
-      let threeLight: THREE.Light;
-
-      switch (l.type) {
-        case "POINT": {
-          const pt = new THREE.PointLight(color, intensity, l.distance || 0);
-          pt.castShadow = true;
-          pt.shadow.mapSize.width = 1024;
-          pt.shadow.mapSize.height = 1024;
-          pt.shadow.camera.near = 0.01;
-          pt.shadow.camera.far = 50;
-          pt.shadow.bias = -0.0001;
-          pt.shadow.normalBias = 0.02;
-          pt.shadow.needsUpdate = true;
-          if (l.distance && l.distance > 0) pt.decay = 2;
-          threeLight = pt;
-
-          break;
-        }
-        case "SUN": {
-          const sun = new THREE.DirectionalLight(color, intensity);
-          sun.castShadow = true;
-          sun.shadow.mapSize.width = 1024;
-          sun.shadow.mapSize.height = 1024;
-          sun.shadow.camera.near = 0.1;
-          sun.shadow.camera.far = 200;
-          sun.shadow.camera.left = -50;
-          sun.shadow.camera.right = 50;
-          sun.shadow.camera.top = 50;
-          sun.shadow.camera.bottom = -50;
-          sun.shadow.bias = -0.00005;
-          sun.shadow.normalBias = 0.02;
-          sun.shadow.needsUpdate = true;
-          threeLight = sun;
-          break;
-        }
-        case "SPOT": {
-          const spot = new THREE.SpotLight(
-            color,
-            intensity,
-            l.distance || 0,
-            l.coneAngle ?? Math.PI / 4,
-            l.penumbra ?? 0,
-          );
-          if (l.distance && l.distance > 0) spot.decay = 2;
-          spot.castShadow = true;
-          spot.shadow.mapSize.width = 1024;
-          spot.shadow.mapSize.height = 1024;
-          spot.shadow.camera.near = 0.1;
-          spot.shadow.camera.far = l.distance || 50;
-          spot.shadow.bias = -0.0001;
-          spot.shadow.normalBias = 0.02;
-          spot.shadow.needsUpdate = true;
-          threeLight = spot;
-          break;
-        }
-        case "AREA": {
-          const w = l.width ?? 1;
-          const h = l.height ?? 1;
-          // Three.js only supports rectangular area lights; DISK/ELLIPSE
-          // are approximated as square.
-          threeLight = new THREE.RectAreaLight(color, intensity, w, h);
-          threeLight.castShadow = true;
-          break;
-        }
-        default:
-          continue; // unknown type — skip
-      }
-
-      threeLight.name = l.name;
-      threeLight.position.set(l.position[0], l.position[1], l.position[2]);
-      threeLight.quaternion.set(
-        l.quaternion[0],
-        l.quaternion[1],
-        l.quaternion[2],
-        l.quaternion[3],
-      );
-
-      threeLight.castShadow = true;
-
-      scene.add(threeLight);
-      lightsRef.current.push(threeLight);
-    }
-  }, [lights, scene]);
+  // Blender energy (Watts) → Three.js intensity conversion.
+  // Multiply by 4π to convert radiant flux to luminous intensity,
+  // then divide by 25 to bring values into a practical range.
+  const ENERGY_SCALE = 1 / 10;
 
   // ------------------------------------------------------------------
   // Sync meshes from Blender data (with InstancedMesh batching)
@@ -535,9 +433,14 @@ export function SyncViewer() {
 
   return (
     <group>
-      {/*  */}
-
-      {/*  */}
+      {/* Lights from Blender — declarative via shared LightFromData */}
+      {lights.map((light) => (
+        <LightFromData
+          key={light.name}
+          light={light}
+          intensityScale={ENERGY_SCALE}
+        />
+      ))}
     </group>
   );
 }
