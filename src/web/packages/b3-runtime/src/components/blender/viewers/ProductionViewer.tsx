@@ -511,13 +511,13 @@ export function ProductionViewer({
   return (
     <div className="h-full w-full relative">
       <CanvasGPU
-        shadows
-        camera={{ position: [5, 5, 5], fov: 50 }}
-        gl={{
-          antialias: true,
-          toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.0,
-        }}
+      // shadows
+      // camera={{ position: [5, 5, 5], fov: 50 }}
+      // gl={{
+      //   antialias: true,
+      //   toneMapping: THREE.ACESFilmicToneMapping,
+      //   toneMappingExposure: 1.0,
+      // }}
       >
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
