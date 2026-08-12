@@ -25,7 +25,7 @@ export function CameraSync() {
 
   useFrame(() => {
     // Selected camera → first scene camera as default → viewport stream fallback
-    const activeCam = selectedCamera ?? cameras[0] ?? cameraData;
+    const activeCam = cameraData ?? selectedCamera ?? cameras[0];
     if (!activeCam) return;
 
     lo.position.set(
