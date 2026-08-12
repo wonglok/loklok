@@ -14,10 +14,10 @@ import type {
   LightData,
   BlenderObject,
   GeoBuffer,
-} from "../types/blenderTypes";
-import { LightFromData } from "./LightFromData";
-import { useMeshSync } from "./useMeshSync";
-import { CanvasGPU } from "./CanvasGPU";
+} from "../../types/blenderTypes";
+import { LightFromData } from "../canvas-units/LightFromData";
+import { useMeshSync } from "../canvas-units/useMeshSync";
+import { CanvasGPU } from "../CanvasGPU";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -8,7 +8,7 @@ import { useBlenderStore } from "../../../../packages/b3-runtime/src/components/
 import {
   BlenderConnection,
   SyncViewer,
-} from "../../../../packages/b3-runtime/src/components/blender/SyncViewer";
+} from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
 import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/SSGIRender";
 

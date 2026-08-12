@@ -2,7 +2,7 @@
 
 import { useRef, useEffect } from "react";
 import * as THREE from "three";
-import type { BlenderObject } from "../types/blenderTypes";
+import type { BlenderObject } from "../../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,9 +92,7 @@ export function useMeshSync({
 
   // Cache of built geometry+material, keyed by cacheKey.
   // Persists across sync runs to avoid rebuilding identical groups.
-  const geoMatCache = useRef<
-    Map<string, BuiltGeometryMaterial>
-  >(new Map());
+  const geoMatCache = useRef<Map<string, BuiltGeometryMaterial>>(new Map());
 
   useEffect(() => {
     if (!scene) return;

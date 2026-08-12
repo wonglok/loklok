@@ -1,7 +1,7 @@
 "use client";
 
 import * as THREE from "three";
-import type { LightData } from "../types/blenderTypes";
+import type { LightData } from "../../types/blenderTypes";
 
 // ---------------------------------------------------------------------------
 // Shared R3F light component — used by both ProductionViewer and SyncViewer

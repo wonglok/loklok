@@ -6,7 +6,7 @@ import { Sidebar } from "../components/blender/Sidebar";
 import {
   BlenderConnection,
   SyncViewer,
-} from "../components/blender/SyncViewer";
+} from "../components/blender/viewers/SyncViewer";
 
 export function ReceiverPage() {
   return (

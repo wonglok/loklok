@@ -7,10 +7,10 @@ import {
   BlenderConnection,
   RefreshButton,
   SyncViewer,
-} from "./components/blender/SyncViewer";
+} from "./components/blender/viewers/SyncViewer";
 import { ReceiverPage } from "./pages/ReciverPage";
 import { OpfsBrowser } from "./components/blender/OpfsBrowser";
-import { ProductionViewer } from "./components/blender/ProductionViewer";
+import { ProductionViewer } from "./components/blender/viewers/ProductionViewer";
 
 // components
 export {
@@ -28,6 +28,12 @@ export {
 export { ReceiverPage };
 
 // OPFS SDK
-export { opfs, OpfsFS, opfsOptimiser, OpfsOptimiser, detectCapabilities } from "./components/utils/opfs";
+export {
+  opfs,
+  OpfsFS,
+  opfsOptimiser,
+  OpfsOptimiser,
+  detectCapabilities,
+} from "./components/utils/opfs";
 
 //

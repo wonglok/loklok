@@ -3,24 +3,24 @@
 import { useEffect } from "react";
 import * as THREE from "three/webgpu";
 import { useThree } from "@react-three/fiber";
-import { useBlenderStore } from "../stores/blenderStore";
+import { useBlenderStore } from "../../stores/blenderStore";
 import {
   _geoMaterialCache,
   getOrCreateTexture,
   buildGeometryFromBuffer,
   computeMeshCacheKey,
-} from "../utils/meshBuilder";
+} from "../../utils/meshBuilder";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
-import type { BlenderObject } from "../types/blenderTypes";
-import { LightFromData } from "./LightFromData";
-import { useMeshSync } from "./useMeshSync";
+import type { BlenderObject } from "../../types/blenderTypes";
+import { LightFromData } from "../canvas-units/LightFromData";
+import { useMeshSync } from "../canvas-units/useMeshSync";
 
 // ---------------------------------------------------------------------------
 // Viewer
 // ---------------------------------------------------------------------------
 
-import { useBlenderSyncStore } from "../stores/blenderSyncStore";
-import { useSettingsStore } from "../stores/settingsStore";
+import { useBlenderSyncStore } from "../../stores/blenderSyncStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 export function RefreshButton({
   className = "block px-3 py-1 text-white text-sm bg-blue-500 rounded-lg m-1",
