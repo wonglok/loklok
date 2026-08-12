@@ -8,7 +8,6 @@ import {
   RefreshButton,
   SyncViewer,
 } from "./components/blender/viewers/SyncViewer";
-import { ReceiverPage } from "./pages/ReciverPage";
 import { OpfsBrowser } from "./components/blender/OpfsBrowser";
 import { ProductionViewer } from "./components/blender/viewers/ProductionViewer";
 
@@ -25,7 +24,21 @@ export {
 };
 
 // pages
-export { ReceiverPage };
+
+export function ReceiverPage() {
+  return (
+    <div className="w-full h-full relative">
+      <div className="w-full h-full flex">
+        <Sidebar />
+        <BlenderConnection></BlenderConnection>
+        <CanvasGPU>
+          <SyncViewer />
+          <CameraSync />
+        </CanvasGPU>
+      </div>
+    </div>
+  );
+}
 
 // OPFS SDK
 export {
