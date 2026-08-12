@@ -169,9 +169,10 @@ export function SyncViewer() {
           pt.shadow.mapSize.width = 1024;
           pt.shadow.mapSize.height = 1024;
           pt.shadow.camera.near = 0.01;
-          pt.shadow.camera.far = l.distance || 50;
+          pt.shadow.camera.far = 50;
           pt.shadow.bias = -0.0001;
           pt.shadow.normalBias = 0.02;
+          pt.shadow.needsUpdate = true;
           if (l.distance && l.distance > 0) pt.decay = 2;
           threeLight = pt;
 
@@ -180,9 +181,9 @@ export function SyncViewer() {
         case "SUN": {
           const sun = new THREE.DirectionalLight(color, intensity);
           sun.castShadow = true;
-          sun.shadow.mapSize.width = 2048;
-          sun.shadow.mapSize.height = 2048;
-          sun.shadow.camera.near = 0.01;
+          sun.shadow.mapSize.width = 1024;
+          sun.shadow.mapSize.height = 1024;
+          sun.shadow.camera.near = 0.1;
           sun.shadow.camera.far = 200;
           sun.shadow.camera.left = -50;
           sun.shadow.camera.right = 50;
@@ -190,6 +191,7 @@ export function SyncViewer() {
           sun.shadow.camera.bottom = -50;
           sun.shadow.bias = -0.00005;
           sun.shadow.normalBias = 0.02;
+          sun.shadow.needsUpdate = true;
           threeLight = sun;
           break;
         }
@@ -209,6 +211,7 @@ export function SyncViewer() {
           spot.shadow.camera.far = l.distance || 50;
           spot.shadow.bias = -0.0001;
           spot.shadow.normalBias = 0.02;
+          spot.shadow.needsUpdate = true;
           threeLight = spot;
           break;
         }
