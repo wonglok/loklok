@@ -431,7 +431,7 @@ function LightFromData({ light }: { light: LightData }) {
           color={color}
           distance={light.distance ?? 0}
           castShadow={light.castShadow}
-          shadow-intensity={2}
+          shadow-intensity={1}
         />
       );
     case "SPOT":

@@ -85,7 +85,7 @@ interface WebPEncodeOptions {
 }
 
 const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
-  quality: 0.50,
+  quality: 0.5,
   maxWidth: 1024,
   maxHeight: 1024,
 };
@@ -96,7 +96,7 @@ async function encodeWebP(
   options: WebPEncodeOptions = {},
 ): Promise<{ blob: Blob; mime: string }> {
   const {
-    quality = 0.50,
+    quality = 0.5,
     maxWidth = 4096,
     maxHeight = 4096,
   } = {
@@ -128,7 +128,7 @@ async function encodeWebP(
   const hasAlpha = sourceMime === "image/png" || sourceMime === "image/webp";
   const blob = await canvas.convertToBlob(
     hasAlpha
-      ? { type: "image/webp" }       // lossless (preserves alpha)
+      ? { type: "image/webp" } // lossless (preserves alpha)
       : { type: "image/webp", quality }, // lossy (JPEG source, no alpha)
   );
 
@@ -161,8 +161,12 @@ function hashGeometry(
   uvs?: Float32Array,
 ): string {
   // Bounding box
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    minZ = Infinity;
+  let maxX = -Infinity,
+    maxY = -Infinity,
+    maxZ = -Infinity;
   for (let i = 0; i < vertices.length; i += 3) {
     if (vertices[i] < minX) minX = vertices[i];
     if (vertices[i + 1] < minY) minY = vertices[i + 1];
@@ -186,8 +190,12 @@ function hashGeometry(
     vertices.length,
     indices.length,
     uvs ? uvs.length : 0,
-    minX.toFixed(4), minY.toFixed(4), minZ.toFixed(4),
-    maxX.toFixed(4), maxY.toFixed(4), maxZ.toFixed(4),
+    minX.toFixed(4),
+    minY.toFixed(4),
+    minZ.toFixed(4),
+    maxX.toFixed(4),
+    maxY.toFixed(4),
+    maxZ.toFixed(4),
     ...vSample.map((v) => v.toFixed(4)),
     ...iSample,
   ];
@@ -240,8 +248,8 @@ async function compressGeometryDraco(
   const numFaces = indices.length / 3;
   meshBuilder.AddFacesToMesh(mesh, numFaces, new Uint32Array(indices));
 
-  // Configure encoder — lossless (no attribute quantization)
-  encoder.SetSpeedOptions(3, 3);
+  // Configure encoder — lossless, maximum compression (speed 0)
+  encoder.SetSpeedOptions(0, 0);
   encoder.SetEncodingMethod(mod.MESH_EDGEBREAKER_ENCODING);
 
   // Encode
@@ -409,7 +417,10 @@ export class OpfsOptimiser {
     }
 
     const uniqueGeos = [...new Set(geoAlias.values())];
-    const instanceGroupData: Record<string, { geometry: string; objects: string[] }> = {};
+    const instanceGroupData: Record<
+      string,
+      { geometry: string; objects: string[] }
+    > = {};
 
     for (const [canon, instances] of instanceGroups) {
       if (instances.length > 1) {
@@ -448,8 +459,16 @@ export class OpfsOptimiser {
               `[OPFS Optimiser] Draco failed for "${name}", storing raw:`,
               err,
             );
-            await writeBinary(geoOutDir, "vertices.bin", sliceBuffer(geo.vertices));
-            await writeBinary(geoOutDir, "indices.bin", sliceBuffer(geo.indices));
+            await writeBinary(
+              geoOutDir,
+              "vertices.bin",
+              sliceBuffer(geo.vertices),
+            );
+            await writeBinary(
+              geoOutDir,
+              "indices.bin",
+              sliceBuffer(geo.indices),
+            );
             if (geo.uvs) {
               await writeBinary(geoOutDir, "uvs.bin", sliceBuffer(geo.uvs));
             }
@@ -463,15 +482,16 @@ export class OpfsOptimiser {
           };
           await writeJSON(geoOutDir, "config.json", config);
         } catch (err) {
-          console.warn(
-            `[OPFS Optimiser] Geometry "${name}" skipped:`,
-            err,
-          );
+          console.warn(`[OPFS Optimiser] Geometry "${name}" skipped:`, err);
         }
       }
 
       const geoOutManifestDir = await ensureDir(outRoot, "geometry");
-      await writeJSON(geoOutManifestDir, "manifest.json", uniqueGeos.map((n) => ({ name: n })));
+      await writeJSON(
+        geoOutManifestDir,
+        "manifest.json",
+        uniqueGeos.map((n) => ({ name: n })),
+      );
 
       onProgress?.({
         stage: "geometry",
@@ -492,9 +512,10 @@ export class OpfsOptimiser {
       const scene = {
         ...rawScene,
         objects: aliasedObjects,
-        instanceGroups: Object.keys(instanceGroupData).length > 0
-          ? instanceGroupData
-          : undefined,
+        instanceGroups:
+          Object.keys(instanceGroupData).length > 0
+            ? instanceGroupData
+            : undefined,
       };
       await writeJSON(outRoot, "scene.json", scene);
     }
@@ -522,7 +543,9 @@ export class OpfsOptimiser {
    * save it to current-deployment/scene.zip.  Returns the zip ArrayBuffer
    * so callers can also pass it to ProductionViewer directly.
    */
-  async packageDeployment(onProgress?: OptimiserCallback): Promise<ArrayBuffer> {
+  async packageDeployment(
+    onProgress?: OptimiserCallback,
+  ): Promise<ArrayBuffer> {
     onProgress?.({ stage: "package", current: 0, total: 1 });
 
     const root = await opfs["init"]();
@@ -546,8 +569,12 @@ export class OpfsOptimiser {
 
     // Walk current-optimised-view
     const ovExists = await (async () => {
-      try { await root.getDirectoryHandle("current-optimised-view"); return true; }
-      catch { return false; }
+      try {
+        await root.getDirectoryHandle("current-optimised-view");
+        return true;
+      } catch {
+        return false;
+      }
     })();
 
     if (ovExists) {
