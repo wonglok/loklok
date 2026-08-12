@@ -17,7 +17,7 @@ export interface LightFromDataProps {
 
 export function LightFromData({
   light,
-  intensityScale = 1.0,
+  intensityScale = 1.0 / 10.0,
 }: LightFromDataProps) {
   const color = new THREE.Color(light.color[0], light.color[1], light.color[2]);
   const position: [number, number, number] = light.position;

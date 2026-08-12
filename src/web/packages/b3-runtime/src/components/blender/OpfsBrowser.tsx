@@ -170,7 +170,11 @@ function TreeNode({
 
         {/* Size */}
         <span className="shrink-0 tabular-nums text-text-muted/60">
-          {isDir && hasChildren ? fmtSize(node.size) : !isDir ? fmtSize(node.size) : null}
+          {isDir && hasChildren
+            ? fmtSize(node.size)
+            : !isDir
+              ? fmtSize(node.size)
+              : null}
         </span>
       </button>
 
@@ -178,11 +182,7 @@ function TreeNode({
       {expanded && hasChildren && (
         <div>
           {node.children!.map((child) => (
-            <TreeNode
-              key={child.name}
-              node={child}
-              depth={depth + 1}
-            />
+            <TreeNode key={child.name} node={child} depth={depth + 1} />
           ))}
         </div>
       )}
@@ -225,7 +225,11 @@ export function OpfsBrowser({ refreshKey = 0 }: { refreshKey?: number }) {
     }
   };
 
-  const isEmpty = !tree || (tree.rawTotal === 0 && tree.optimisedTotal === 0 && tree.deploymentTotal === 0);
+  const isEmpty =
+    !tree ||
+    (tree.rawTotal === 0 &&
+      tree.optimisedTotal === 0 &&
+      tree.deploymentTotal === 0);
   const savingsPct = tree ? pct(tree.optimisedTotal, tree.rawTotal) : null;
 
   return (

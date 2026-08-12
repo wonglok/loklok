@@ -8,24 +8,24 @@ import { HDRLoader } from "three/examples/jsm/Addons.js";
 import JSZip from "jszip";
 import draco3d from "draco3d";
 
-import type { SceneData, CameraData, LightData } from "../types/blenderTypes";
+import type {
+  SceneData,
+  CameraData,
+  LightData,
+  BlenderObject,
+  GeoBuffer,
+} from "../types/blenderTypes";
 import { LightFromData } from "./LightFromData";
+import { useMeshSync } from "./useMeshSync";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface LoadedObject {
-  name: string;
-  geometry: THREE.BufferGeometry;
-  material: THREE.MeshStandardMaterial;
-  position: [number, number, number];
-  quaternion: [number, number, number, number];
-  scale: [number, number, number];
-}
-
 interface ProductionScene {
-  objects: LoadedObject[];
+  objects: BlenderObject[];
+  geometryMap: Map<string, GeoBuffer>;
+  textureMap: Map<string, THREE.Texture>;
   lights: LightData[];
   cameras: CameraData[];
   /** Radiance RGBE HDR buffer — decoded via HDRLoader inside Canvas. */
@@ -172,10 +172,7 @@ async function loadProductionScene(
     hdrBytes = await hdrBinFile.async("arraybuffer");
   }
 
-  // Build objects
-  const loadedObjects: LoadedObject[] = [];
-
-  // Pre-load textures
+  // Pre-load textures into a Map (keyed by texture name)
   const texManifestFile = zip.file("textures/manifest.json");
   const texEntries: { name: string; mime: string }[] = texManifestFile
     ? JSON.parse(await texManifestFile.async("text"))
@@ -203,13 +200,13 @@ async function loadProductionScene(
     textureMap.set(entry.name, texture);
   }
 
-  // Geometry manifest
+  // Decode geometries into GeoBuffer format (raw typed arrays)
   const geoManifestFile = zip.file("geometry/manifest.json");
   const geoEntries: { name: string }[] = geoManifestFile
     ? JSON.parse(await geoManifestFile.async("text"))
     : [];
 
-  const geometryMap = new Map<string, THREE.BufferGeometry>();
+  const geometryMap = new Map<string, GeoBuffer>();
 
   for (const entry of geoEntries) {
     try {
@@ -221,17 +218,12 @@ async function loadProductionScene(
         const dracoBuf = await dracoFile.async("arraybuffer");
         const decoded = await decodeDraco(dracoBuf, entry.name);
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute(
-          "position",
-          new THREE.BufferAttribute(decoded.vertices, 3),
-        );
-        geo.setIndex(new THREE.BufferAttribute(decoded.indices, 1));
-        if (decoded.uvs) {
-          geo.setAttribute("uv", new THREE.BufferAttribute(decoded.uvs, 2));
-        }
-        geo.computeVertexNormals();
-        geometryMap.set(entry.name, geo);
+        geometryMap.set(entry.name, {
+          version: "1",
+          vertices: decoded.vertices,
+          indices: decoded.indices,
+          uvs: decoded.uvs,
+        });
         continue;
       }
 
@@ -243,77 +235,26 @@ async function loadProductionScene(
       if (vertsFile && idxsFile) {
         const verts = new Float32Array(await vertsFile.async("arraybuffer"));
         const idxs = new Uint32Array(await idxsFile.async("arraybuffer"));
+        const uvs = uvsFile
+          ? new Float32Array(await uvsFile.async("arraybuffer"))
+          : undefined;
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
-        geo.setIndex(new THREE.BufferAttribute(idxs, 1));
-        if (uvsFile) {
-          const uvs = new Float32Array(await uvsFile.async("arraybuffer"));
-          geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-        }
-        geo.computeVertexNormals();
-        geometryMap.set(entry.name, geo);
+        geometryMap.set(entry.name, {
+          version: "1",
+          vertices: verts,
+          indices: idxs,
+          uvs,
+        });
       }
     } catch (err) {
       console.warn(`[ProductionViewer] Geometry "${entry.name}" skipped:`, err);
     }
   }
 
-  // Build meshes
-  for (const obj of sceneData.objects) {
-    // Use the canonical geometry name when instancing is active,
-    // fall back to object name for non-instanced scenes.
-    const geoName: string = (obj as any).geometry ?? obj.name;
-    const geo = geometryMap.get(geoName);
-    if (!geo) {
-      console.warn(
-        `[ProductionViewer] Geometry "${geoName}" not found for "${obj.name}"`,
-      );
-      continue;
-    }
-
-    const opacity = obj.opacity ?? 1;
-    const alphaTest = obj.alphaTest ?? 0;
-    const isTransparent = obj.transparent === true;
-
-    const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(
-        obj.texture ? 1 : (obj.color?.[0] ?? 0.5),
-        obj.texture ? 1 : (obj.color?.[1] ?? 0.5),
-        obj.texture ? 1 : (obj.color?.[2] ?? 0.5),
-      ),
-      roughness: obj.roughness ?? 0.5,
-      metalness: obj.metalness ?? 0,
-      map: obj.texture ? (textureMap.get(obj.texture) ?? null) : null,
-      roughnessMap: obj.roughnessMap
-        ? (textureMap.get(obj.roughnessMap) ?? null)
-        : null,
-      metalnessMap: obj.metalnessMap
-        ? (textureMap.get(obj.metalnessMap) ?? null)
-        : null,
-      normalMap: obj.normalMap ? (textureMap.get(obj.normalMap) ?? null) : null,
-      side: THREE.FrontSide,
-    });
-
-    // Match tslMaterialBuilder: pass transparent directly,
-    // only set opacity/alphaTest when non-default
-    mat.transparent = isTransparent;
-    if (opacity < 1.0) mat.opacity = opacity;
-    if (alphaTest > 0) mat.alphaTest = alphaTest;
-    if (obj.flatShading === true) mat.flatShading = true;
-
-    loadedObjects.push({
-      name: obj.name,
-      geometry: geo,
-      material: mat,
-      position: obj.position,
-      quaternion: obj.quaternion,
-      scale: obj.scale,
-    });
-  }
-
   return {
-    objects: loadedObjects,
+    objects: sceneData.objects,
+    geometryMap,
+    textureMap,
     lights,
     cameras,
     hdrBytes,
@@ -327,6 +268,7 @@ async function loadProductionScene(
 
 function SceneContent({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
+  const threeScene = useThree((s) => s.scene);
 
   // Build PMREM from raw Float32 HDR inside the Canvas WebGL context
   const envMap = useMemo(() => {
@@ -348,6 +290,86 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     return env;
   }, [scene.hdrBytes, gl]);
 
+  // Sync meshes via the shared hook — handles caching, InstancedMesh
+  // batching, incremental updates, and cleanup.
+  useMeshSync({
+    scene: threeScene,
+    objects: scene.objects,
+    resolveTextures: (obj: BlenderObject) => ({
+      map: obj.texture ? (scene.textureMap.get(obj.texture) ?? null) : null,
+      roughnessMap: obj.roughnessMap
+        ? (scene.textureMap.get(obj.roughnessMap) ?? null)
+        : null,
+      metalnessMap: obj.metalnessMap
+        ? (scene.textureMap.get(obj.metalnessMap) ?? null)
+        : null,
+      normalMap: obj.normalMap
+        ? (scene.textureMap.get(obj.normalMap) ?? null)
+        : null,
+      emissiveMap: obj.emissiveMap
+        ? (scene.textureMap.get(obj.emissiveMap) ?? null)
+        : null,
+    }),
+    computeCacheKey: (obj: BlenderObject, textures) => {
+      // Include geometry name and texture refs in the cache key.
+      // Version is always "1" for static production scenes.
+      const geoName: string = (obj as any).geometry ?? obj.name;
+      return [geoName, "1", "1"]
+        .concat([
+          textures.map?.uuid ?? "",
+          textures.roughnessMap?.uuid ?? "",
+          textures.metalnessMap?.uuid ?? "",
+          textures.normalMap?.uuid ?? "",
+          textures.emissiveMap?.uuid ?? "",
+        ])
+        .join("|");
+    },
+    buildGeometryMaterial: (obj: BlenderObject, textures) => {
+      const geoName: string = (obj as any).geometry ?? obj.name;
+      const geoBuf = scene.geometryMap.get(geoName);
+      if (!geoBuf) return null;
+
+      // Build BufferGeometry from raw typed arrays
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute(
+        "position",
+        new THREE.BufferAttribute(geoBuf.vertices, 3),
+      );
+      geo.setIndex(new THREE.BufferAttribute(geoBuf.indices, 1));
+      if (geoBuf.uvs && geoBuf.uvs.length > 0) {
+        geo.setAttribute("uv", new THREE.BufferAttribute(geoBuf.uvs, 2));
+      }
+      geo.computeVertexNormals();
+
+      // Build MeshStandardMaterial matching the original ProductionViewer look
+      const opacity = obj.opacity ?? 1;
+      const alphaTest = obj.alphaTest ?? 0;
+      const isTransparent = obj.transparent === true;
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(
+          obj.texture ? 1 : (obj.color?.[0] ?? 0.5),
+          obj.texture ? 1 : (obj.color?.[1] ?? 0.5),
+          obj.texture ? 1 : (obj.color?.[2] ?? 0.5),
+        ),
+        roughness: obj.roughness ?? 0.5,
+        metalness: obj.metalness ?? 0,
+        map: textures.map,
+        roughnessMap: textures.roughnessMap,
+        metalnessMap: textures.metalnessMap,
+        normalMap: textures.normalMap,
+        side: THREE.FrontSide,
+      });
+
+      mat.transparent = isTransparent;
+      if (opacity < 1.0) mat.opacity = opacity;
+      if (alphaTest > 0) mat.alphaTest = alphaTest;
+      if (obj.flatShading === true) mat.flatShading = true;
+
+      return { geometry: geo, material: mat };
+    },
+  });
+
   return (
     <>
       {/* Environment */}
@@ -358,20 +380,6 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
           background
         />
       )}
-
-      {/* Meshes */}
-      {scene.objects.map((obj) => (
-        <mesh
-          key={obj.name}
-          geometry={obj.geometry}
-          material={obj.material}
-          position={obj.position}
-          quaternion={obj.quaternion}
-          scale={obj.scale}
-          castShadow
-          receiveShadow
-        />
-      ))}
 
       {/* Lights from Blender */}
       {scene.lights.map((light) => (

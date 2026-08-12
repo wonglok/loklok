@@ -21,7 +21,13 @@ export const rgbeLoader = new HDRLoader();
 
 //
 
-export const CanvasGPU: any = ({ children }: { children?: any }) => {
+export const CanvasGPU: any = ({
+  children,
+  ...props
+}: {
+  children?: any;
+  props: any;
+}) => {
   const ref = useRef<HTMLDivElement>(null);
 
   // let dpr = typeof window !== "undefined" ? window?.devicePixelRatio || 1 : 1;
@@ -45,11 +51,13 @@ export const CanvasGPU: any = ({ children }: { children?: any }) => {
           //
           // dpr={[1, dpr]}
           // shadows="soft"
-          gl={async (props: any): Promise<any> => {
+          gl={async (glprops: any): Promise<any> => {
             const renderer = new THREE.WebGPURenderer({
-              ...(props as any),
               alpha: true,
               antialias: true,
+              ...(glprops as any),
+              ...props,
+
               requiredLimits: {
                 maxColorAttachments: 24,
               },

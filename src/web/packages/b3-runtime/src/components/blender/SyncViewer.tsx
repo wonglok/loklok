@@ -1,40 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import * as THREE from "three/webgpu";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
 import { useBlenderStore } from "../stores/blenderStore";
 import {
   _geoMaterialCache,
   getOrCreateTexture,
   buildGeometryFromBuffer,
   computeMeshCacheKey,
-  type InstancedGroupEntry,
 } from "../utils/meshBuilder";
 import { HDRLoader } from "three/examples/jsm/Addons.js";
-import type { BlenderObject, GeoBuffer } from "../types/blenderTypes";
+import type { BlenderObject } from "../types/blenderTypes";
 import { LightFromData } from "./LightFromData";
-
-// ---------------------------------------------------------------------------
-// Module-level caches
-// ---------------------------------------------------------------------------
-interface CachedMesh {
-  mesh: THREE.Mesh;
-  version: string;
-}
-
-/** Track which instance index an object occupies within its InstancedMesh. */
-interface InstanceSlot {
-  mesh: THREE.InstancedMesh;
-  index: number;
-}
-
-/** Shallow set equality check. */
-function setsEqual(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const v of a) if (!b.has(v)) return false;
-  return true;
-}
+import { useMeshSync } from "./useMeshSync";
 
 // ---------------------------------------------------------------------------
 // Viewer
@@ -94,11 +73,6 @@ export function SyncViewer() {
   const lights = useBlenderStore((s) => s.lights);
 
   const scene = useThree((r) => r.scene);
-  const sceneRef = useRef<THREE.Scene | null>(scene);
-  const meshesRef = useRef<Map<string, CachedMesh>>(new Map());
-  const instancedRef = useRef<Map<string, InstancedGroupEntry>>(new Map());
-  const instanceSlotsRef = useRef<Map<string, InstanceSlot>>(new Map());
-
   const gl = useThree((r) => r.gl);
 
   // ------------------------------------------------------------------
@@ -137,299 +111,89 @@ export function SyncViewer() {
     scene.environmentIntensity = hdrIntensity;
   }, [hdrIntensity, scene]);
 
+  // ------------------------------------------------------------------
+  // Sync meshes from Blender data (with InstancedMesh batching)
+  // ------------------------------------------------------------------
+  useMeshSync({
+    scene: scene!,
+    objects: sceneData.objects,
+    resolveTextures: (obj: BlenderObject) => ({
+      map: obj.texture
+        ? getOrCreateTexture(obj.texture, texData, "color")
+        : null,
+      roughnessMap: obj.roughnessMap
+        ? getOrCreateTexture(obj.roughnessMap, texData, "noncolor")
+        : null,
+      metalnessMap: obj.metalnessMap
+        ? getOrCreateTexture(obj.metalnessMap, texData, "noncolor")
+        : null,
+      normalMap: obj.normalMap
+        ? getOrCreateTexture(obj.normalMap, texData, "noncolor")
+        : null,
+      emissiveMap: obj.emissiveMap
+        ? getOrCreateTexture(obj.emissiveMap, texData, "color")
+        : null,
+    }),
+    computeCacheKey: (obj: BlenderObject, textures) => {
+      const geoBuf = geoBuffers.get(obj.name);
+      return computeMeshCacheKey(
+        obj.name,
+        obj.version,
+        geoBuf?.version,
+        textures.map,
+        textures.roughnessMap,
+        textures.metalnessMap,
+        textures.normalMap,
+        textures.emissiveMap,
+      );
+    },
+    buildGeometryMaterial: (obj: BlenderObject, textures) => {
+      const geoBuf = geoBuffers.get(obj.name);
+      if (!geoBuf || geoBuf.version !== obj.version) return null;
+
+      const geoName = (obj as any).geometry ?? obj.name;
+      const cacheKey = computeMeshCacheKey(
+        geoName,
+        obj.version,
+        geoBuf.version,
+        textures.map,
+        textures.roughnessMap,
+        textures.metalnessMap,
+        textures.normalMap,
+        textures.emissiveMap,
+      );
+
+      let geoMat = _geoMaterialCache.get(cacheKey);
+      if (!geoMat) {
+        geoMat = buildGeometryFromBuffer({
+          buf: geoBuf,
+          color: obj.color,
+          roughness: obj.roughness ?? 0.5,
+          metalness: obj.metalness ?? 0.0,
+          emissiveColor: obj.emissiveColor ?? [0, 0, 0],
+          emissiveIntensity: obj.emissiveIntensity ?? 0.0,
+          map: textures.map,
+          roughnessMap: textures.roughnessMap,
+          metalnessMap: textures.metalnessMap,
+          normalMap: textures.normalMap,
+          emissiveMap: textures.emissiveMap,
+          transparent: obj.transparent,
+          opacity: obj.opacity,
+          alphaTest: obj.alphaTest,
+          flatShading: obj.flatShading,
+          graph: obj.graph,
+        }) as any;
+        _geoMaterialCache.set(cacheKey, geoMat as any);
+      }
+
+      return geoMat as any;
+    },
+  });
+
   // Blender energy (Watts) → Three.js intensity conversion.
   // Multiply by 4π to convert radiant flux to luminous intensity,
   // then divide by 25 to bring values into a practical range.
   const ENERGY_SCALE = 1 / 10;
-
-  // ------------------------------------------------------------------
-  // Sync meshes from Blender data (with InstancedMesh batching)
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-
-    const meshes = meshesRef.current;
-    const instanced = instancedRef.current;
-    const slots = instanceSlotsRef.current;
-    const incomingNames = new Set<string>();
-
-    // ---- Phase 0: resolve textures & compute cache keys for every object ----
-    interface ObjectWithKey {
-      obj: BlenderObject;
-      cacheKey: string;
-      map: THREE.Texture | null;
-      roughnessMap: THREE.Texture | null;
-      metalnessMap: THREE.Texture | null;
-      normalMap: THREE.Texture | null;
-      emissiveMap: THREE.Texture | null;
-      geoBuf: GeoBuffer | undefined;
-    }
-
-    const resolved: ObjectWithKey[] = [];
-
-    for (const obj of sceneData.objects) {
-      const geoBuf = geoBuffers.get(obj.name);
-
-      const map = obj.texture
-        ? getOrCreateTexture(obj.texture, texData, "color")
-        : null;
-      const roughnessMap = obj.roughnessMap
-        ? getOrCreateTexture(obj.roughnessMap, texData, "noncolor")
-        : null;
-      const metalnessMap = obj.metalnessMap
-        ? getOrCreateTexture(obj.metalnessMap, texData, "noncolor")
-        : null;
-      const normalMap = obj.normalMap
-        ? getOrCreateTexture(obj.normalMap, texData, "noncolor")
-        : null;
-      const emissiveMap = obj.emissiveMap
-        ? getOrCreateTexture(obj.emissiveMap, texData, "color")
-        : null;
-
-      const cacheKey = computeMeshCacheKey(
-        obj.name,
-        obj.version,
-        geoBuf?.version,
-        map,
-        roughnessMap,
-        metalnessMap,
-        normalMap,
-        emissiveMap,
-      );
-
-      resolved.push({
-        obj,
-        cacheKey,
-        map,
-        roughnessMap,
-        metalnessMap,
-        normalMap,
-        emissiveMap,
-        geoBuf,
-      });
-    }
-
-    // ---- Phase 1: group by cache key ----
-    const groups = new Map<string, ObjectWithKey[]>();
-    for (const r of resolved) {
-      if (!groups.has(r.cacheKey)) groups.set(r.cacheKey, []);
-      groups.get(r.cacheKey)!.push(r);
-    }
-
-    // ---- Phase 2: build / update meshes per group ----
-    for (const [cacheKey, items] of groups) {
-      for (const item of items) incomingNames.add(item.obj.name);
-
-      if (items.length > 1) {
-        // ================================================================
-        // INSTANCED path — N objects share the same geometry + material
-        // ================================================================
-        const first = items[0];
-        if (!first.geoBuf || first.geoBuf.version !== first.obj.version)
-          continue;
-
-        const currentNames = new Set(items.map((it) => it.obj.name));
-        let entry = instanced.get(cacheKey);
-
-        // Rebuild if membership changed or doesn't exist yet
-        const needsRebuild =
-          !entry ||
-          entry.mesh.count !== items.length ||
-          !setsEqual(entry.names, currentNames);
-
-        if (needsRebuild) {
-          // Remove old instanced mesh
-          if (entry) {
-            for (const n of entry.names) slots.delete(n);
-            scene.remove(entry.mesh);
-          }
-
-          // Build geometry + material (once for the group)
-          let geoMat = _geoMaterialCache.get(cacheKey);
-          if (!geoMat) {
-            geoMat = buildGeometryFromBuffer({
-              buf: first.geoBuf,
-              color: first.obj.color,
-              roughness: first.obj.roughness ?? 0.5,
-              metalness: first.obj.metalness ?? 0.0,
-              emissiveColor: first.obj.emissiveColor ?? [0, 0, 0],
-              emissiveIntensity: first.obj.emissiveIntensity ?? 0.0,
-              map: first.map,
-              roughnessMap: first.roughnessMap,
-              metalnessMap: first.metalnessMap,
-              normalMap: first.normalMap,
-              emissiveMap: first.emissiveMap,
-              transparent: first.obj.transparent,
-              opacity: first.obj.opacity,
-              alphaTest: first.obj.alphaTest,
-              flatShading: first.obj.flatShading,
-              graph: first.obj.graph,
-            }) as any;
-            _geoMaterialCache.set(cacheKey, geoMat as any);
-          }
-
-          const im = new THREE.InstancedMesh(
-            (geoMat as any).geometry,
-            (geoMat as any).material,
-            items.length,
-          );
-          im.castShadow = true;
-          im.receiveShadow = true;
-          scene.add(im);
-
-          entry = { mesh: im, names: currentNames };
-          instanced.set(cacheKey, entry);
-        }
-
-        // Track slots & set instance matrices directly
-        items.forEach((item, i) => {
-          const name = item.obj.name;
-          const matrix = new THREE.Matrix4().compose(
-            new THREE.Vector3(
-              item.obj.position[0],
-              item.obj.position[1],
-              item.obj.position[2],
-            ),
-            new THREE.Quaternion(
-              item.obj.quaternion[0],
-              item.obj.quaternion[1],
-              item.obj.quaternion[2],
-              item.obj.quaternion[3],
-            ),
-            new THREE.Vector3(
-              item.obj.scale[0],
-              item.obj.scale[1],
-              item.obj.scale[2],
-            ),
-          );
-
-          slots.set(name, { mesh: entry!.mesh, index: i });
-          entry!.mesh.setMatrixAt(i, matrix);
-        });
-
-        if (entry) entry.mesh.instanceMatrix.needsUpdate = true;
-
-        // Ensure there's no stale regular mesh for any of these objects
-        if (entry) {
-          for (const item of items) {
-            const old = meshes.get(item.obj.name);
-            if (old) {
-              scene.remove(old.mesh);
-              meshes.delete(item.obj.name);
-            }
-          }
-        }
-      } else {
-        // ================================================================
-        // SINGLE-INSTANCE path — regular Mesh (same as before)
-        // ================================================================
-        const {
-          obj,
-          cacheKey,
-          map,
-          roughnessMap,
-          metalnessMap,
-          normalMap,
-          emissiveMap,
-        } = items[0];
-        const geoBuf = items[0].geoBuf;
-
-        // Remove from any previous instanced group
-        const slot = slots.get(obj.name);
-        if (slot) {
-          slots.delete(obj.name);
-        }
-
-        let cached = meshes.get(obj.name);
-
-        if (!cached || cached.version !== cacheKey) {
-          if (cached) {
-            scene.remove(cached.mesh);
-            cached = undefined;
-          }
-
-          if (geoBuf && geoBuf.version === obj.version) {
-            let geoMat = _geoMaterialCache.get(cacheKey);
-            if (!geoMat) {
-              geoMat = buildGeometryFromBuffer({
-                buf: geoBuf,
-                color: obj.color,
-                roughness: obj.roughness ?? 0.5,
-                metalness: obj.metalness ?? 0.0,
-                emissiveColor: obj.emissiveColor ?? [0, 0, 0],
-                emissiveIntensity: obj.emissiveIntensity ?? 0.0,
-                map,
-                roughnessMap,
-                metalnessMap,
-                normalMap,
-                emissiveMap,
-                transparent: obj.transparent,
-                opacity: obj.opacity,
-                alphaTest: obj.alphaTest,
-                flatShading: obj.flatShading,
-                graph: obj.graph,
-              }) as any;
-              _geoMaterialCache.set(cacheKey, geoMat as any);
-            }
-
-            const mesh = new THREE.Mesh(
-              (geoMat as any).geometry,
-              (geoMat as any).material,
-            );
-            mesh.name = obj.name;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-
-            cached = { mesh, version: cacheKey };
-            meshes.set(obj.name, cached);
-          }
-        }
-
-        // Set transform directly
-        if (cached) {
-          cached.mesh.position.set(
-            obj.position[0],
-            obj.position[1],
-            obj.position[2],
-          );
-          cached.mesh.quaternion.set(
-            obj.quaternion[0],
-            obj.quaternion[1],
-            obj.quaternion[2],
-            obj.quaternion[3],
-          );
-          cached.mesh.scale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
-        }
-      }
-    }
-
-    // ---- Phase 3: cleanup ----
-    // Remove stale regular meshes
-    for (const [name, entry] of meshes) {
-      if (!incomingNames.has(name)) {
-        scene.remove(entry.mesh);
-        meshes.delete(name);
-      }
-    }
-
-    // Remove stale instanced groups
-    for (const [cacheKey, entry] of instanced) {
-      if (!groups.has(cacheKey)) {
-        for (const n of entry.names) slots.delete(n);
-        scene.remove(entry.mesh);
-        instanced.delete(cacheKey);
-      }
-    }
-
-    // Remove stale slots (objects that moved from instanced → single or removed)
-    for (const [name] of slots) {
-      if (!incomingNames.has(name)) {
-        slots.delete(name);
-      }
-    }
-  }, [sceneData, texData, geoBuffers]);
 
   return (
     <group>
