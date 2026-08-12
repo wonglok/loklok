@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // OPFS Optimizer — compress raw buffers/textures to WebP + Draco
 // ---------------------------------------------------------------------------
-// Reads from ./current-view/* and writes optimised assets to
+// Reads from ./current-rawdata-view/* and writes optimised assets to
 // ./current-optimised-view/*.
 //
 // Optimisation pipeline:
@@ -302,7 +302,7 @@ export class OpfsOptimiser {
     // ---- Textures ----
     const texManifest = await (async () => {
       try {
-        const d = await ensureDir(root, "current-view/textures");
+        const d = await ensureDir(root, "current-rawdata-view/textures");
         return await readJSON<TextureEntry[]>(d, "manifest.json");
       } catch {
         return null;
@@ -374,7 +374,7 @@ export class OpfsOptimiser {
     // ---- Geometry (dedup + Draco) ----
     const geoManifest = await (async () => {
       try {
-        const d = await ensureDir(root, "current-view/geometry");
+        const d = await ensureDir(root, "current-rawdata-view/geometry");
         return await readJSON<GeometryEntry[]>(d, "manifest.json");
       } catch {
         return null;

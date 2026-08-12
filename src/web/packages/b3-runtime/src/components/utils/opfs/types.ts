@@ -6,7 +6,7 @@
 //
 // Directory layout in OPFS:
 //
-//   current-view/
+//   current-rawdata-view/
 //     scene.json                 — SceneData (full objects array)
 //     hdr/
 //       data.bin                 — Float32 RGBA pixel buffer
@@ -92,8 +92,10 @@ export interface OpfsTreeNode {
 /** Top-level summary returned by listTree(). */
 export interface OpfsTree {
   root: OpfsTreeNode;
-  /** Total bytes under current-view (recursive). */
+  /** Total bytes under current-rawdata-view (recursive). */
   rawTotal: number;
   /** Total bytes under current-optimised-view (recursive). */
   optimisedTotal: number;
+  /** Total bytes under current-deployment (recursive). */
+  deploymentTotal: number;
 }

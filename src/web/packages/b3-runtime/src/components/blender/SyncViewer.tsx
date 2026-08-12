@@ -166,15 +166,33 @@ export function SyncViewer() {
         case "POINT": {
           const pt = new THREE.PointLight(color, intensity, l.distance || 0);
           pt.castShadow = true;
+          pt.shadow.mapSize.width = 1024;
+          pt.shadow.mapSize.height = 1024;
+          pt.shadow.camera.near = 0.1;
+          pt.shadow.camera.far = l.distance || 50;
+          pt.shadow.bias = -0.0001;
+          pt.shadow.normalBias = 0.02;
+          pt.castShadow = true;
           pt.receiveShadow = true;
           if (l.distance && l.distance > 0) pt.decay = 2;
           threeLight = pt;
+
           break;
         }
         case "SUN": {
-          threeLight = new THREE.DirectionalLight(color, intensity);
-          threeLight.castShadow = true;
-          threeLight.receiveShadow = true;
+          const sun = new THREE.DirectionalLight(color, intensity);
+          sun.castShadow = true;
+          sun.shadow.mapSize.width = 2048;
+          sun.shadow.mapSize.height = 2048;
+          sun.shadow.camera.near = 0.1;
+          sun.shadow.camera.far = 100;
+          sun.shadow.camera.left = -20;
+          sun.shadow.camera.right = 20;
+          sun.shadow.camera.top = 20;
+          sun.shadow.camera.bottom = -20;
+          sun.shadow.bias = -0.0001;
+          sun.shadow.normalBias = 0.02;
+          threeLight = sun;
           break;
         }
         case "SPOT": {
@@ -186,6 +204,13 @@ export function SyncViewer() {
             l.penumbra ?? 0,
           );
           if (l.distance && l.distance > 0) spot.decay = 2;
+          spot.castShadow = true;
+          spot.shadow.mapSize.width = 1024;
+          spot.shadow.mapSize.height = 1024;
+          spot.shadow.camera.near = 0.1;
+          spot.shadow.camera.far = l.distance || 50;
+          spot.shadow.bias = -0.0001;
+          spot.shadow.normalBias = 0.02;
           threeLight = spot;
           break;
         }
@@ -195,6 +220,7 @@ export function SyncViewer() {
           // Three.js only supports rectangular area lights; DISK/ELLIPSE
           // are approximated as square.
           threeLight = new THREE.RectAreaLight(color, intensity, w, h);
+          threeLight.castShadow = true;
           break;
         }
         default:
@@ -209,8 +235,8 @@ export function SyncViewer() {
         l.quaternion[2],
         l.quaternion[3],
       );
+
       threeLight.castShadow = true;
-      threeLight.receiveShadow = true;
 
       scene.add(threeLight);
       lightsRef.current.push(threeLight);

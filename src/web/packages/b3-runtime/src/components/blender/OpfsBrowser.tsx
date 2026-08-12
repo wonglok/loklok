@@ -225,7 +225,7 @@ export function OpfsBrowser({ refreshKey = 0 }: { refreshKey?: number }) {
     }
   };
 
-  const isEmpty = !tree || (tree.rawTotal === 0 && tree.optimisedTotal === 0);
+  const isEmpty = !tree || (tree.rawTotal === 0 && tree.optimisedTotal === 0 && tree.deploymentTotal === 0);
   const savingsPct = tree ? pct(tree.optimisedTotal, tree.rawTotal) : null;
 
   return (
@@ -293,6 +293,14 @@ export function OpfsBrowser({ refreshKey = 0 }: { refreshKey?: number }) {
                   </span>
                 )}
               </>
+            )}
+            {tree.deploymentTotal > 0 && (
+              <span>
+                Zip:{" "}
+                <span className="text-text-secondary tabular-nums font-semibold">
+                  {fmtSize(tree.deploymentTotal)}
+                </span>
+              </span>
             )}
           </div>
 

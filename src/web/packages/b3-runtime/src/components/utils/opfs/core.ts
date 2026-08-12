@@ -27,7 +27,7 @@ import type { SceneData, ImageData, TextureData, GeoBuffer, CameraData, LightDat
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Walk a path like "current-view/hdr" into nested directories, creating as needed. */
+/** Walk a path like "current-rawdata-view/hdr" into nested directories, creating as needed. */
 async function ensureDir(root: FileSystemDirectoryHandle, path: string): Promise<FileSystemDirectoryHandle> {
   const parts = path.split("/").filter(Boolean);
   let handle = root;
@@ -187,13 +187,13 @@ export class OpfsFS {
 
   async writeScene(data: SceneData): Promise<void> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     await writeJSON(dir, "scene.json", data);
   }
 
   async readScene(): Promise<SceneData | null> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     return readJSON<SceneData>(dir, "scene.json");
   }
 
@@ -203,20 +203,20 @@ export class OpfsFS {
 
   async writeHDR(pixels: ArrayBuffer, width: number, height: number, intensity: number): Promise<void> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view/hdr");
+    const dir = await ensureDir(root, "current-rawdata-view/hdr");
     await writeBinary(dir, "data.bin", pixels);
     await writeJSON(dir, "config.json", { width, height, intensity } satisfies HdrConfig);
   }
 
   async readHDRBinary(): Promise<ArrayBuffer | null> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view/hdr");
+    const dir = await ensureDir(root, "current-rawdata-view/hdr");
     return readBinary(dir, "data.bin");
   }
 
   async readHDRConfig(): Promise<HdrConfig | null> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view/hdr");
+    const dir = await ensureDir(root, "current-rawdata-view/hdr");
     return readJSON<HdrConfig>(dir, "config.json");
   }
 
@@ -233,7 +233,7 @@ export class OpfsFS {
 
   async writeTexture(name: string, data: TextureData): Promise<void> {
     const root = await this.init();
-    const texDir = await ensureDir(root, "current-view/textures");
+    const texDir = await ensureDir(root, "current-rawdata-view/textures");
 
     // Extract extension from mime type
     const ext = mimeToExt(data.mime);
@@ -255,7 +255,7 @@ export class OpfsFS {
 
   async readTexture(name: string): Promise<TextureData | null> {
     const root = await this.init();
-    const texDir = await ensureDir(root, "current-view/textures");
+    const texDir = await ensureDir(root, "current-rawdata-view/textures");
     const manifest = await readJSON<TextureEntry[]>(texDir, "manifest.json");
     const entry = manifest?.find((e) => e.name === name);
     if (!entry) return null;
@@ -269,7 +269,7 @@ export class OpfsFS {
   async readAllTextures(): Promise<Map<string, TextureData>> {
     const result = new Map<string, TextureData>();
     const root = await this.init();
-    const texDir = await ensureDir(root, "current-view/textures");
+    const texDir = await ensureDir(root, "current-rawdata-view/textures");
     const manifest = await readJSON<TextureEntry[]>(texDir, "manifest.json");
     if (!manifest) return result;
 
@@ -289,7 +289,7 @@ export class OpfsFS {
 
   async writeGeometry(name: string, geo: GeoBuffer): Promise<void> {
     const root = await this.init();
-    const geoDir = await ensureDir(root, `current-view/geometry/${sanitiseName(name)}`);
+    const geoDir = await ensureDir(root, `current-rawdata-view/geometry/${sanitiseName(name)}`);
 
     await writeBinary(geoDir, "vertices.bin", geo.vertices.buffer.slice(
       geo.vertices.byteOffset,
@@ -318,7 +318,7 @@ export class OpfsFS {
     await writeJSON(geoDir, "config.json", config);
 
     // Update manifest
-    const manifestDir = await ensureDir(root, "current-view/geometry");
+    const manifestDir = await ensureDir(root, "current-rawdata-view/geometry");
     const manifest = (await readJSON<GeometryEntry[]>(manifestDir, "manifest.json")) ?? [];
     if (!manifest.find((e) => e.name === name)) {
       manifest.push({ name });
@@ -328,7 +328,7 @@ export class OpfsFS {
 
   async readGeometry(name: string): Promise<GeoBuffer | null> {
     const root = await this.init();
-    const geoDir = await ensureDir(root, `current-view/geometry/${sanitiseName(name)}`);
+    const geoDir = await ensureDir(root, `current-rawdata-view/geometry/${sanitiseName(name)}`);
 
     const config = await readJSON<GeometryConfig>(geoDir, "config.json");
     const vertsRaw = await readBinary(geoDir, "vertices.bin");
@@ -351,7 +351,7 @@ export class OpfsFS {
   async readAllGeometry(): Promise<Map<string, GeoBuffer>> {
     const result = new Map<string, GeoBuffer>();
     const root = await this.init();
-    const manifestDir = await ensureDir(root, "current-view/geometry");
+    const manifestDir = await ensureDir(root, "current-rawdata-view/geometry");
     const manifest = await readJSON<GeometryEntry[]>(manifestDir, "manifest.json");
     if (!manifest) return result;
 
@@ -368,13 +368,13 @@ export class OpfsFS {
 
   async writeCameras(cameras: CameraData[]): Promise<void> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     await writeJSON(dir, "cameras.json", cameras);
   }
 
   async readCameras(): Promise<CameraData[]> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     return (await readJSON<CameraData[]>(dir, "cameras.json")) ?? [];
   }
 
@@ -384,13 +384,13 @@ export class OpfsFS {
 
   async writeLights(lights: LightData[]): Promise<void> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     await writeJSON(dir, "lights.json", lights);
   }
 
   async readLights(): Promise<LightData[]> {
     const root = await this.init();
-    const dir = await ensureDir(root, "current-view");
+    const dir = await ensureDir(root, "current-rawdata-view");
     return (await readJSON<LightData[]>(dir, "lights.json")) ?? [];
   }
 
@@ -447,10 +447,10 @@ export class OpfsFS {
   // Lifecycle
   // ------------------------------------------------------------------
 
-  /** Remove the entire ./current-view subtree. */
+  /** Remove the entire ./current-rawdata-view subtree. */
   async clearCurrentView(): Promise<void> {
     const root = await this.init();
-    await removeDir(root, "current-view");
+    await removeDir(root, "current-rawdata-view");
   }
 
   /** Remove the entire ./current-optimised-view subtree. */
@@ -480,7 +480,7 @@ export class OpfsFS {
     await removeDir(root, "current-deployment");
   }
 
-  /** Remove both current-view and current-optimised-view. */
+  /** Remove both current-rawdata-view and current-optimised-view. */
   async clearAll(): Promise<void> {
     await this.clearCurrentView();
     await this.clearOptimisedView();
@@ -505,11 +505,12 @@ export class OpfsFS {
 
     let rawTotal = 0;
     let optimisedTotal = 0;
+    let deploymentTotal = 0;
 
-    // Walk current-view
-    if (await dirExists(root, "current-view")) {
-      const cvDir = await root.getDirectoryHandle("current-view");
-      const cvNode = await walkDir(cvDir, "current-view");
+    // Walk current-rawdata-view
+    if (await dirExists(root, "current-rawdata-view")) {
+      const cvDir = await root.getDirectoryHandle("current-rawdata-view");
+      const cvNode = await walkDir(cvDir, "current-rawdata-view");
       rawTotal = cvNode.size;
       tree.children!.push(cvNode);
     }
@@ -522,7 +523,15 @@ export class OpfsFS {
       tree.children!.push(ovNode);
     }
 
-    return { root: tree, rawTotal, optimisedTotal };
+    // Walk current-deployment
+    if (await dirExists(root, "current-deployment")) {
+      const depDir = await root.getDirectoryHandle("current-deployment");
+      const depNode = await walkDir(depDir, "current-deployment");
+      deploymentTotal = depNode.size;
+      tree.children!.push(depNode);
+    }
+
+    return { root: tree, rawTotal, optimisedTotal, deploymentTotal };
   }
 }
 

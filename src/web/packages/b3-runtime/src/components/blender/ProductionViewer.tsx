@@ -391,13 +391,13 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         </>
       )}
 
-      <ContactShadows
+      {/* <ContactShadows
         position={[0, -0.01, 0]}
         scale={20}
         blur={2}
         far={4}
         opacity={0.4}
-      />
+      /> */}
 
       <OrbitControls makeDefault />
       {/* <gridHelper args={[20, 20, "#333", "#222"]} /> */}
