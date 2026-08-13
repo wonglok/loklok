@@ -1,6 +1,6 @@
 {
   "name": "@effectnode/b3-runtime",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "type": "module",
   "files": [
     "dist"
@@ -35,7 +35,7 @@
     "vite-plugin-dts": "^4.4.0"
   },
   "scripts": {
-    "deploy": "npm version patch; npm publish --access public;",
+    "deploy": "tsc && vite build; npm version patch; npm publish --access public;",
     "build": "tsc && vite build",
     "dev": "vite build --watch"
   },

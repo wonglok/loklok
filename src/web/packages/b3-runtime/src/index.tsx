@@ -13,7 +13,7 @@ import {
   ProductionScene,
   ProductionViewer,
 } from "./components/blender/viewers/ProductionViewer";
-// import { SSGIRender } from "./components/blender/canvas-units/SSGIRender";
+import { SSGIRender } from "./components/blender/canvas-units/SSGIRender";
 
 // components
 export {
@@ -26,6 +26,7 @@ export {
   OpfsBrowser,
   ProductionViewer,
   ProductionScene,
+  SSGIRender,
 };
 
 // OPFS SDK
@@ -36,8 +37,6 @@ export {
   OpfsOptimiser,
   detectCapabilities,
 } from "./components/utils/opfs";
-
-//
 
 // examples
 
