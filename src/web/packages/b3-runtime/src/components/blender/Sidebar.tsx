@@ -164,6 +164,7 @@ export function Sidebar({ moreButtons = null }: { moreButtons?: ReactNode }) {
   const [snapshotStatus, setSnapshotStatus] = useState<
     "idle" | "saving" | "optimising" | "packaging" | "done" | "error"
   >("idle");
+
   const [snapshotVersion, setSnapshotVersion] = useState(0);
 
   const takeSnapshot = async () => {
@@ -529,7 +530,7 @@ export function Sidebar({ moreButtons = null }: { moreButtons?: ReactNode }) {
       </div>
 
       {/* ---- OPFS Browser ---- */}
-      <div className="px-3.5 py-2.5 border-t border-border max-h-[50vh]">
+      <div className="px-3.5 py-2.5 border-t border-border h-[40%] max-h-[600px] overflow-y-scroll">
         <OpfsBrowser refreshKey={snapshotVersion} />
       </div>
 

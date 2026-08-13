@@ -309,7 +309,7 @@ export function OpfsBrowser({ refreshKey = 0 }: { refreshKey?: number }) {
           </div>
 
           {/* Tree */}
-          <div className="bg-surface-secondary/50 rounded border border-border/50 p-1.5 max-h-[400px] overflow-y-auto">
+          <div className="bg-surface-secondary/50 rounded border border-border/50 p-1.5">
             {tree.root.children?.map((child) => (
               <TreeNode
                 key={child.name}
