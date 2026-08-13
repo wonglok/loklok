@@ -410,60 +410,6 @@ export function Sidebar({
             Camera
           </div>
 
-          {/* Camera detail when syncing */}
-          {isConnected && cameraData && (
-            <div className="mt-1 space-y-0.5 pl-2 text-[10px] text-text-muted leading-relaxed">
-              <div className="flex justify-between">
-                <span>FOV</span>
-                <span className="text-text-secondary tabular-nums">
-                  {cameraData.ortho ? "ortho" : `${cameraData.fov}°`}
-                </span>
-              </div>
-              <div className="text-[10px] uppercase tracking-wider text-text-muted/70 mt-1">
-                Position
-              </div>
-              <div className="flex justify-between">
-                <span>X</span>
-                <span className="text-text-secondary tabular-nums">
-                  {cameraData.position[0].toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Y</span>
-                <span className="text-text-secondary tabular-nums">
-                  {cameraData.position[1].toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Z</span>
-                <span className="text-text-secondary tabular-nums">
-                  {cameraData.position[2].toFixed(2)}
-                </span>
-              </div>
-              <div className="text-[10px] uppercase tracking-wider text-text-muted/70 mt-1">
-                Rotation
-              </div>
-              <div className="flex justify-between">
-                <span>X</span>
-                <span className="text-text-secondary tabular-nums">
-                  {((cameraData.euler[0] * 180) / Math.PI).toFixed(1)}°
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Y</span>
-                <span className="text-text-secondary tabular-nums">
-                  {((cameraData.euler[1] * 180) / Math.PI).toFixed(1)}°
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Z</span>
-                <span className="text-text-secondary tabular-nums">
-                  {((cameraData.euler[2] * 180) / Math.PI).toFixed(1)}°
-                </span>
-              </div>
-            </div>
-          )}
-
           {isConnected && !cameraData && (
             <div className="text-[10px] text-status-yellow/80 pl-2">
               Waiting for viewport data…
@@ -532,6 +478,60 @@ export function Sidebar({
               No scene cameras
             </div>
           )}
+
+          {/* Camera detail when syncing */}
+          {/* {isConnected && cameraData && (
+            <div className="mt-1 space-y-0.5 pl-2 text-[10px] text-text-muted leading-relaxed">
+              <div className="flex justify-between">
+                <span>FOV</span>
+                <span className="text-text-secondary tabular-nums">
+                  {cameraData.ortho ? "ortho" : `${cameraData.fov}°`}
+                </span>
+              </div>
+              <div className="text-[10px] uppercase tracking-wider text-text-muted/70 mt-1">
+                Position
+              </div>
+              <div className="flex justify-between">
+                <span>X</span>
+                <span className="text-text-secondary tabular-nums">
+                  {cameraData.position[0].toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Y</span>
+                <span className="text-text-secondary tabular-nums">
+                  {cameraData.position[1].toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Z</span>
+                <span className="text-text-secondary tabular-nums">
+                  {cameraData.position[2].toFixed(2)}
+                </span>
+              </div>
+              <div className="text-[10px] uppercase tracking-wider text-text-muted/70 mt-1">
+                Rotation
+              </div>
+              <div className="flex justify-between">
+                <span>X</span>
+                <span className="text-text-secondary tabular-nums">
+                  {((cameraData.euler[0] * 180) / Math.PI).toFixed(1)}°
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Y</span>
+                <span className="text-text-secondary tabular-nums">
+                  {((cameraData.euler[1] * 180) / Math.PI).toFixed(1)}°
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Z</span>
+                <span className="text-text-secondary tabular-nums">
+                  {((cameraData.euler[2] * 180) / Math.PI).toFixed(1)}°
+                </span>
+              </div>
+            </div>
+          )} */}
         </div>
       </div>
 
