@@ -15,12 +15,12 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 bl_info = {
-    "name": "B3 Addon",
-    "description": "Blender and ThreeJS Addon",
+    "name": "B3 Sync",
+    "description": "Blender and ThreeJS Sync",
     "author": "Lok Wong",
     "version": (1, 0, 3),
     "blender": (4, 1, 0),
-    "location": "Properties > Render > B3 Addon",
+    "location": "Properties > Render > B3 Sync",
     "warning": "", # used for warning icon and text in add-ons panel
     "wiki_url": "http://inter-site.com",
     "category": "3D View"
