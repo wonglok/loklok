@@ -15,6 +15,15 @@ import {
 } from "./components/blender/viewers/ProductionViewer";
 import { SSGIRender } from "./components/blender/canvas-units/SSGIRender";
 
+import { useBlenderStore } from "./components/stores/blenderStore";
+import { useBlenderSyncStore } from "./components/stores/blenderSyncStore";
+import { useSettingsStore } from "./components/stores/settingsStore";
+
+export * from "./components/types/blenderTypes";
+
+// stores
+export { useSettingsStore, useBlenderSyncStore, useBlenderStore };
+
 // components
 export {
   Sidebar,
