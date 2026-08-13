@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import { ProductionViewer, Sidebar } from "../../../../packages/b3-runtime/src";
+import {
+  OpfsBrowser,
+  ProductionViewer,
+  Sidebar,
+} from "../../../../packages/b3-runtime/src";
 import { CameraSync } from "../../../../packages/b3-runtime/src/components/blender/CameraSync";
 import { CanvasGPU } from "../../../../packages/b3-runtime/src/components/blender/CanvasGPU";
 import { useBlenderStore } from "../../../../packages/b3-runtime/src/components/stores/blenderStore";
@@ -53,7 +57,16 @@ export function BlenderReceiver() {
             <OutputPreview></OutputPreview>
           </div>
         </div>
-        <Sidebar></Sidebar>
+        <Sidebar
+          bottomRow={
+            <>
+              {/* ---- OPFS Browser ---- */}
+              <div className="px-3.5 py-2.5 border-t border-border h-[400px] overflow-y-scroll">
+                <OpfsBrowser refreshKey={0} />
+              </div>
+            </>
+          }
+        ></Sidebar>
       </div>
     </div>
   );

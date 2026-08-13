@@ -119,7 +119,13 @@ function SaveIcon() {
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
-export function Sidebar({ moreButtons = null }: { moreButtons?: ReactNode }) {
+export function Sidebar({
+  bottomRow = null,
+  moreButtons = null,
+}: {
+  bottomRow?: ReactNode;
+  moreButtons?: ReactNode;
+}) {
   const connectionState = useBlenderStore((s) => s.connectionState);
   const objectCount = useBlenderStore((s) => s.sceneData.objects.length);
   const cameraData = useBlenderStore((s) => s.cameraData);
@@ -529,15 +535,14 @@ export function Sidebar({ moreButtons = null }: { moreButtons?: ReactNode }) {
         </div>
       </div>
 
-      {/* ---- OPFS Browser ---- */}
-      <div className="px-3.5 py-2.5 border-t border-border h-[40%] max-h-[600px] overflow-y-scroll">
-        <OpfsBrowser refreshKey={snapshotVersion} />
-      </div>
+      {bottomRow}
 
       {/* ---- Footer ---- */}
       <div className="px-3.5 py-2.5 border-t border-border text-[10px] text-text-muted/60">
         B3Sync :{port}
       </div>
+
+      {/*  */}
     </div>
   );
 }
