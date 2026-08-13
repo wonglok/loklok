@@ -68,7 +68,7 @@ function OutputPreview({ children }: { children?: ReactNode }) {
   const [zipBuffer, setZipBuffer] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [id, setID] = useState("");
   useEffect(() => {
     let cancelled = false;
 
@@ -79,6 +79,7 @@ function OutputPreview({ children }: { children?: ReactNode }) {
         const buf = await opfs.readDeployment();
         if (cancelled) return;
         setZipBuffer(buf);
+        setID(`_${buf?.byteLength}`);
         if (!buf) setError(null); // not an error, just nothing deployed yet
       } catch (err) {
         if (cancelled) return;
@@ -159,7 +160,7 @@ function OutputPreview({ children }: { children?: ReactNode }) {
           />
 
           {zipBuffer && (
-            <ProductionScene zipBuffer={zipBuffer}></ProductionScene>
+            <ProductionScene key={id} zipBuffer={zipBuffer}></ProductionScene>
           )}
 
           {children}
@@ -169,9 +170,6 @@ function OutputPreview({ children }: { children?: ReactNode }) {
   );
 }
 
-//
-//
-//
 //
 //
 //
