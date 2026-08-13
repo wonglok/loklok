@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-// OPFS Optimizer — compress raw buffers/textures to WebP + Draco
+// OPFS Optimizer — compress raw buffers/textures to AVIF + Draco
 // ---------------------------------------------------------------------------
 // Reads from ./current-rawdata-view/* and writes optimised assets to
 // ./current-optimised-view/*.
 //
 // Optimisation pipeline:
-//   1. Textures    → WebP re-encode (via OffscreenCanvas, universal support)
+//   1. Textures    → AVIF re-encode (WebP fallback, via OffscreenCanvas)
 //   2. HDR         → Raw copy (no compression — preserves float precision)
 //   3. Geometry    → Deduplicate + Draco-compress (via draco3d WASM)
 //   4. Scene JSON  → Copy-through with instance groups + updated references
@@ -75,32 +75,56 @@ async function writeBinary(
 }
 
 // ---------------------------------------------------------------------------
-// WebP encode — via OffscreenCanvas (universal browser support)
+// Texture encode — AVIF, with WebP fallback (via OffscreenCanvas)
 // ---------------------------------------------------------------------------
 
-interface WebPEncodeOptions {
+interface TextureEncodeOptions {
   quality?: number;
   maxWidth?: number;
   maxHeight?: number;
 }
 
-const DEFAULT_WEBP_OPTIONS: WebPEncodeOptions = {
+const DEFAULT_TEXTURE_OPTIONS: TextureEncodeOptions = {
   quality: 0.5,
   maxWidth: 1024,
   maxHeight: 1024,
 };
 
-async function encodeWebP(
+/** Cached capability check — can OffscreenCanvas encode AVIF? */
+let avifEncodeSupported: boolean | null = null;
+
+async function supportsAvifEncode(): Promise<boolean> {
+  if (avifEncodeSupported !== null) return avifEncodeSupported;
+
+  if (typeof OffscreenCanvas === "undefined") {
+    avifEncodeSupported = false;
+    return avifEncodeSupported;
+  }
+
+  try {
+    const canvas = new OffscreenCanvas(2, 2);
+    const blob = await canvas.convertToBlob({
+      type: "image/avif",
+      quality: 0.5,
+    });
+    avifEncodeSupported = blob.type === "image/avif";
+  } catch {
+    avifEncodeSupported = false;
+  }
+  return avifEncodeSupported;
+}
+
+async function encodeTexture(
   source: ImageBitmap | Blob,
   sourceMime: string,
-  options: WebPEncodeOptions = {},
+  options: TextureEncodeOptions = {},
 ): Promise<{ blob: Blob; mime: string }> {
   const {
     quality = 0.5,
     maxWidth = 4096,
     maxHeight = 4096,
   } = {
-    ...DEFAULT_WEBP_OPTIONS,
+    ...DEFAULT_TEXTURE_OPTIONS,
     ...options,
   };
 
@@ -123,15 +147,20 @@ async function encodeWebP(
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  // PNG / WebP sources may have transparency — use lossless WebP to preserve alpha.
-  // Lossy WebP (VP8) discards the alpha channel.
+  if (await supportsAvifEncode()) {
+    // Lossy AVIF preserves the alpha channel — no separate lossless path needed.
+    const blob = await canvas.convertToBlob({ type: "image/avif", quality });
+    return { blob, mime: "image/avif" };
+  }
+
+  // WebP fallback — lossy WebP (VP8) discards alpha, so use lossless for
+  // sources that may carry transparency.
   const hasAlpha = sourceMime === "image/png" || sourceMime === "image/webp";
   const blob = await canvas.convertToBlob(
     hasAlpha
       ? { type: "image/webp" } // lossless (preserves alpha)
       : { type: "image/webp", quality }, // lossy (JPEG source, no alpha)
   );
-
   return { blob, mime: "image/webp" };
 }
 
@@ -295,7 +324,7 @@ export class OpfsOptimiser {
 
   /**
    * Run the full optimisation pipeline:
-   *   1. Textures → WebP
+   *   1. Textures → AVIF
    *   2. HDR → KTX2 (UASTC, full HDR)
    *   3. Geometry → Draco
    *   4. Cameras, lights, scene JSON copy-through
@@ -337,11 +366,20 @@ export class OpfsOptimiser {
           if (!texData) continue;
 
           const blob = new Blob([texData.bytes], { type: texData.mime });
-          const { blob: webpBlob, mime } = await encodeWebP(blob, texData.mime);
+          const { blob: outBlob, mime } = await encodeTexture(
+            blob,
+            texData.mime,
+            {
+              quality: 0.4,
+              maxHeight: 1024,
+              maxWidth: 1024,
+            },
+          );
+          const ext = mime.split("/")[1] ?? "avif";
           await writeBinary(
             texOutDir,
-            `${entry.name}.webp`,
-            await webpBlob.arrayBuffer(),
+            `${entry.name}.${ext}`,
+            await outBlob.arrayBuffer(),
           );
           texOutManifest.push({ name: entry.name, mime });
         } catch (err) {
