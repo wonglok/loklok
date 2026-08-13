@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import { useBlenderStore } from "../stores/blenderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBlenderSyncStore } from "../stores/blenderSyncStore";
@@ -119,7 +119,7 @@ function SaveIcon() {
 // ---------------------------------------------------------------------------
 // Sidebar
 // ---------------------------------------------------------------------------
-export function Sidebar() {
+export function Sidebar({ moreButtons = null }: { moreButtons?: ReactNode }) {
   const connectionState = useBlenderStore((s) => s.connectionState);
   const objectCount = useBlenderStore((s) => s.sceneData.objects.length);
   const cameraData = useBlenderStore((s) => s.cameraData);
@@ -395,6 +395,8 @@ export function Sidebar() {
           </button>
         </div>
 
+        {moreButtons}
+
         {/* Camera Sync */}
         <div className="space-y-1.5">
           <div className="text-[10px] uppercase tracking-widest text-text-muted">
@@ -527,7 +529,7 @@ export function Sidebar() {
       </div>
 
       {/* ---- OPFS Browser ---- */}
-      <div className="px-3.5 py-2.5 border-t border-border">
+      <div className="px-3.5 py-2.5 border-t border-border max-h-[50vh]">
         <OpfsBrowser refreshKey={snapshotVersion} />
       </div>
 
