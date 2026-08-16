@@ -263,7 +263,7 @@ export function Sidebar({
             {portDirty && !isConnected && (
               <button
                 onClick={handlePortSave}
-                className="shrink-0 px-2 py-1.5 rounded bg-accent text-white text-[10px] font-semibold hover:bg-accent-strong transition-colors"
+                className="shrink-0 px-2 py-1.5 rounded bg-accent text-studio-900 text-[10px] font-semibold hover:bg-accent-strong transition-colors"
               >
                 Apply
               </button>
@@ -293,7 +293,7 @@ export function Sidebar({
                 disabled={isConnecting}
                 className="
                   flex-1 px-2.5 py-1.5 rounded flex items-center justify-center
-                  bg-accent text-white text-xs
+                  bg-accent text-studio-900 text-xs
                   hover:bg-accent-strong
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors
