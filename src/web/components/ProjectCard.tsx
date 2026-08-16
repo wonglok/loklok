@@ -37,22 +37,22 @@ export function ProjectCard({ project }: ProjectCardProps) {
   }
 
   return (
-    <div className="bg-white border border-[#c8ece8] rounded-xl p-5 space-y-3 hover:border-[#81d8d0] transition-colors shadow-sm">
+    <div className="bg-studio-850 border border-studio-700 rounded-lg p-5 space-y-3 hover:border-tiffany-500/60 transition-colors">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-lg font-semibold text-[#1a4a45] truncate">
+        <h3 className="text-lg font-semibold text-ice-50 truncate">
           {project.title}
         </h3>
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setEditing(true)}
-            className="p-2 rounded-lg text-[#6b9e97] hover:text-[#2fa89c] hover:bg-[#e8f8f5] transition-colors"
+            className="p-2 rounded-md text-ice-600 hover:text-ice-50 hover:bg-studio-800 transition-colors"
             title="Edit project"
           >
             <EditIcon className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="p-2 rounded-lg text-[#6b9e97] hover:text-red-500 hover:bg-red-50 transition-colors"
+            className="p-2 rounded-md text-ice-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
             title="Delete project"
           >
             <TrashIcon className="w-4 h-4" />
@@ -60,10 +60,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-[#6b9e97]">
+      <div className="flex items-center gap-2 text-sm text-ice-400">
         {project.folderPath ? (
           <>
-            <FolderOpenIcon className="w-4 h-4 text-[#a3c9c3] shrink-0" />
+            <FolderOpenIcon className="w-4 h-4 text-ice-600 shrink-0" />
             <span className="truncate font-mono text-xs">
               {project.folderPath}
             </span>
@@ -71,18 +71,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
         ) : (
           <>
             <FolderIcon className="w-4 h-4 shrink-0" />
-            <span className="italic">No folder selected</span>
+            <span className="italic text-ice-600">No folder selected</span>
           </>
         )}
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="text-xs text-[#a3c9c3]">
+        <div className="text-xs text-ice-600">
           Created {new Date(project.createdAt).toLocaleDateString()}
         </div>
         <Link
           to={`/projects/${project.id}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#81d8d0] hover:bg-[#6ac4bc] text-white rounded-lg text-xs font-medium transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-tiffany-400 hover:bg-tiffany-300 text-studio-900 rounded-md text-xs font-semibold transition-colors"
         >
           Open
           <ArrowRightIcon className="w-3.5 h-3.5" />

@@ -2,10 +2,11 @@
 
 /* ------------------------------------------------------------------ */
 /* Light theme — drafting table / light box                            */
-/* ------------------------------------------------------------------ */
 /* A warm paper surface with cool blueprint-ink accents.  The palette  */
 /* references animation desks, light tables, and architectural drafts  */
 /* — deliberate departure from the dark Blender/Maya default.          */
+/* (Kept for the Welcome / Projects list / receiver overlays.)         */
+/* ------------------------------------------------------------------ */
 
 @theme {
   /* Surface */
@@ -36,6 +37,89 @@
   /* Canvas — slightly darker for depth */
   --color-canvas: #e8e4dd;
   --color-canvas-alt: #f0ede7;
+
+  /* ---------------------------------------------------------------- */
+  /* Dark Blender studio — tiffany accent                              */
+  /* The project workspace (`/projects/:id`) is a dense, dark, tool-   */
+  /* like studio.  Cool-tinted graphite surfaces, hairline borders,    */
+  /* and Tiffany blue (#81d8d0) as the active / selection colour.      */
+  /* ---------------------------------------------------------------- */
+
+  /* Surfaces — graphite, cool-tinted */
+  --color-studio-950: #111415;
+  --color-studio-900: #16191a;
+  --color-studio-850: #1c1f20;
+  --color-studio-800: #232627;
+  --color-studio-700: #2d3132;
+  --color-studio-600: #3a3f41;
+
+  /* Text — cool light */
+  --color-ice-50: #f2f6f6;
+  --color-ice-200: #ccd6d8;
+  --color-ice-400: #9aa4a6;
+  --color-ice-600: #636d6f;
+
+  /* Accent — Tiffany blue */
+  --color-tiffany-200: #c9f2ee;
+  --color-tiffany-300: #a7e7e0;
+  --color-tiffany-400: #81d8d0;
+  --color-tiffany-500: #5cc9bf;
+  --color-tiffany-600: #2bb5ac;
+  --color-tiffany-700: #0abab5;
+
+  /* Motion */
+  --animate-grid-drift: grid-drift 44s linear infinite;
+  --animate-glow-pulse: glow-pulse 7s ease-in-out infinite;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 56px 28px, 56px 28px;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Viewport helpers — dashboard hero                                   */
+/* ------------------------------------------------------------------ */
+
+/* A faint studio grid that drifts diagonally, suggesting a live     */
+/* camera orbit.  Masked to a radial vignette like a 3D viewport.    */
+.viewport-grid {
+  background-image: linear-gradient(var(--color-studio-700) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-studio-700) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 45%,
+    #000 40%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 45%,
+    #000 40%,
+    transparent 78%
+  );
+}
+
+/* Soft tiffany light source behind the wireframe cube. */
+.viewport-glow {
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(129, 216, 208, 0.26),
+    transparent 65%
+  );
 }
 
 html,
@@ -53,4 +137,19 @@ body {
 
 button {
   cursor: pointer;
+}
+
+/* Visible keyboard focus — tiffany ring, consistent across the app. */
+:focus-visible {
+  outline: 2px solid var(--color-tiffany-400);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Ambient motion is decoration, not content. */
+@media (prefers-reduced-motion: reduce) {
+  .viewport-grid,
+  .viewport-glow {
+    animation: none !important;
+  }
 }

@@ -5,7 +5,9 @@ import { Projects } from "../pages/Projects";
 //
 //
 import { DashUILayout } from "../pages/ProjectAdminLayout/DashUILayout";
-import { SubPage } from "../pages/ProjectAdminLayout/SubPage/SubPage";
+import { Dashboard } from "../pages/ProjectAdminLayout/SubPage/Dashboard";
+import { AssetPage } from "../pages/ProjectAdminLayout/SubPage/AssetPage";
+import { SettingsPage } from "../pages/ProjectAdminLayout/SubPage/SettingsPage";
 import { BlenderReceiver } from "../pages/ProjectAdminLayout/SubPage/BlenderReceiver";
 
 export function AppRouter() {
@@ -17,10 +19,7 @@ export function AppRouter() {
         path="/projects/:projectID"
         element={
           <DashUILayout>
-            <SubPage
-              title="Dashboard"
-              description="Overview of your project assets and activity"
-            />
+            <Dashboard />
           </DashUILayout>
         }
       />
@@ -28,7 +27,7 @@ export function AppRouter() {
         path="/projects/:projectID/props"
         element={
           <DashUILayout>
-            <SubPage title="3D Props" description="Manage 3D prop assets" />
+            <AssetPage type="props" />
           </DashUILayout>
         }
       />
@@ -36,10 +35,7 @@ export function AppRouter() {
         path="/projects/:projectID/environments"
         element={
           <DashUILayout>
-            <SubPage
-              title="Environments"
-              description="Manage 3D environment scenes"
-            />
+            <AssetPage type="environments" />
           </DashUILayout>
         }
       />
@@ -47,10 +43,7 @@ export function AppRouter() {
         path="/projects/:projectID/avatars"
         element={
           <DashUILayout>
-            <SubPage
-              title="Avatars"
-              description="Manage 3D avatar and character files"
-            />
+            <AssetPage type="avatars" />
           </DashUILayout>
         }
       />
@@ -58,10 +51,7 @@ export function AppRouter() {
         path="/projects/:projectID/media"
         element={
           <DashUILayout>
-            <SubPage
-              title="Media"
-              description="Manage textures, images, and media files"
-            />
+            <AssetPage type="media" />
           </DashUILayout>
         }
       />
@@ -78,7 +68,7 @@ export function AppRouter() {
         path="/projects/:projectID/settings"
         element={
           <DashUILayout>
-            <SubPage title="Settings" description="Settings page" />
+            <SettingsPage />
           </DashUILayout>
         }
       />
