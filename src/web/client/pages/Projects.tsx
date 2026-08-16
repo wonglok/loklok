@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useProjectStore } from "../stores/useProjectStore";
 import { ProjectCard } from "../../components/ProjectCard";
 import { ProjectForm } from "../../components/ProjectForm";
+import { StudioBackdrop } from "../../components/StudioBackdrop";
 import { PlusIcon } from "../../components/Icons";
 
 export function Projects() {
@@ -15,8 +16,9 @@ export function Projects() {
   const count = projects.length;
 
   return (
-    <div className="min-h-screen bg-studio-900 text-ice-50">
-      <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="relative min-h-screen bg-studio-900 text-ice-50">
+      <StudioBackdrop />
+      <div className="relative max-w-2xl mx-auto px-4 py-12 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
           <div>
