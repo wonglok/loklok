@@ -35,10 +35,6 @@ interface ProductionScene {
    *  space — the same image can be a colour map on one object and a
    *  roughness map on another. */
   textureData: Map<string, TextureData>;
-  /** Decoded textures keyed by `name:kind`. Scoped to this zip rather than
-   *  reusing meshBuilder's module-level cache, so production texture names
-   *  can't collide with the live sync scene's. */
-  textureCache: Map<string, THREE.Texture>;
   lights: LightData[];
   cameras: CameraData[];
   /** Radiance RGBE HDR buffer — decoded via HDRLoader inside Canvas. */
@@ -46,10 +42,18 @@ interface ProductionScene {
   hdrIntensity: number;
 }
 
+/** Decoded textures keyed by `name:kind`, scoped per loaded scene rather than
+ *  reusing meshBuilder's module-level cache — production texture names would
+ *  otherwise collide with the live sync scene's. Derived state, so it's held
+ *  beside the scene instead of on it. */
+const _textureCaches = new WeakMap<
+  ProductionScene,
+  Map<string, THREE.Texture>
+>();
+
 /**
  * Decode a zip texture into a Three.js texture with the correct colour space
- * for its usage. Mirrors meshBuilder's `getOrCreateTexture`, but backed by a
- * scene-local cache.
+ * for its usage. Mirrors meshBuilder's `getOrCreateTexture`.
  */
 function resolveTexture(
   scene: ProductionScene,
@@ -58,8 +62,14 @@ function resolveTexture(
 ): THREE.Texture | null {
   if (!name) return null;
 
+  let cache = _textureCaches.get(scene);
+  if (!cache) {
+    cache = new Map();
+    _textureCaches.set(scene, cache);
+  }
+
   const cacheKey = `${name}:${kind}`;
-  const existing = scene.textureCache.get(cacheKey);
+  const existing = cache.get(cacheKey);
   if (existing) return existing;
 
   const entry = scene.textureData.get(name);
@@ -79,7 +89,7 @@ function resolveTexture(
   texture.colorSpace =
     kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
 
-  scene.textureCache.set(cacheKey, texture);
+  cache.set(cacheKey, texture);
   return texture;
 }
 
@@ -298,7 +308,6 @@ async function loadProductionScene(
     objects: sceneData.objects,
     geometryMap,
     textureData,
-    textureCache: new Map(),
     lights,
     cameras,
     hdrBytes,
