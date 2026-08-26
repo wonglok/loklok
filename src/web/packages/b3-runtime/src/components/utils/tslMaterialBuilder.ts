@@ -794,9 +794,15 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
       alpha: first("alpha"),
       normal: first("normal"),
       transmission: first("transmission", "transmission-weight"),
+      transmissionRoughness: first(
+        "transmission-roughness",
+        "transmission_roughness",
+      ),
+      thickness: first("thickness", "transmission-thickness"),
       ior: first("ior"),
       clearcoat: first("clearcoat", "coat", "coat-weight"),
       clearcoatRoughness: first("clearcoat-roughness", "coat-roughness"),
+      clearcoatNormal: first("clearcoat-normal", "coat-normal"),
       sheen: first("sheen", "sheen-weight"),
       sheenRoughness: first("sheen-roughness"),
       sheenTint: first("sheen-tint"),
@@ -804,6 +810,15 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
       specularTint: first("specular-tint"),
       anisotropic: first("anisotropic", "anisotropic"),
       anisotropicRotation: first("anisotropic-rotation"),
+      iridescence: first("iridescence", "thin-film", "thin-film-weight"),
+      iridescenceThickness: first(
+        "iridescence-thickness",
+        "thin-film-thickness",
+      ),
+      iridescenceIOR: first("iridescence-ior", "thin-film-ior"),
+      dispersion: first("dispersion"),
+      attenuationDistance: first("attenuation-distance"),
+      attenuationColor: first("attenuation-color"),
     };
   },
 
@@ -1637,6 +1652,24 @@ function defaultParam(name: string): unknown {
       return 0;
     case "transmission":
       return 0;
+    case "transmissionRoughness":
+      return 0;
+    case "thickness":
+      return 0;
+    case "clearcoatNormal":
+      return [0, 0, 1];
+    case "iridescence":
+      return 0;
+    case "iridescenceThickness":
+      return 0;
+    case "iridescenceIOR":
+      return 1.3;
+    case "dispersion":
+      return 0;
+    case "attenuationDistance":
+      return 0;
+    case "attenuationColor":
+      return [1, 1, 1];
     default:
       return undefined;
   }
@@ -1654,10 +1687,12 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
     const pb = resolveBSDF(b, depth + 1);
     const out: BSDFParams = {};
     const keys = new Set([...Object.keys(pa), ...Object.keys(pb)]);
+    // Colour-ish params are mixed as vec3; scalar params as float.
+    const VEC3_KEYS = new Set(["baseColor", "clearcoatNormal", "attenuationColor"]);
     for (const k of keys) {
       const av = pa[k] ?? defaultParam(k);
       const bv = pb[k] ?? defaultParam(k);
-      if (k === "baseColor") {
+      if (VEC3_KEYS.has(k)) {
         out[k] = mix(
           toVec3(av as any),
           toVec3(bv as any),
@@ -1872,6 +1907,46 @@ function _applyBSDF(
   if (bsdf.anisotropic != null) {
     const v = toFloat(bsdf.anisotropic as any);
     if (v) (mat as any).anisotropyNode = v;
+  }
+  if (bsdf.transmissionRoughness != null) {
+    const v = toFloat(bsdf.transmissionRoughness as any);
+    if (v) (mat as any).transmissionNode = v; // approximated via transmission
+  }
+  if (bsdf.thickness != null) {
+    const v = toFloat(bsdf.thickness as any);
+    if (v) (mat as any).thicknessNode = v;
+  }
+  if (bsdf.clearcoatNormal != null) {
+    const v = toVec3(bsdf.clearcoatNormal as any);
+    if (v) (mat as any).clearcoatNormalNode = v;
+  }
+  if (bsdf.sheenTint != null) {
+    const v = toVec3(bsdf.sheenTint as any);
+    if (v) (mat as any).sheenColorNode = v as any;
+  }
+  if (bsdf.iridescence != null) {
+    const v = toFloat(bsdf.iridescence as any);
+    if (v) (mat as any).iridescenceNode = v;
+  }
+  if (bsdf.iridescenceThickness != null) {
+    const v = toFloat(bsdf.iridescenceThickness as any);
+    if (v) (mat as any).iridescenceThicknessNode = v;
+  }
+  if (bsdf.iridescenceIOR != null) {
+    const v = toFloat(bsdf.iridescenceIOR as any);
+    if (v) (mat as any).iridescenceIORNode = v;
+  }
+  if (bsdf.dispersion != null) {
+    const v = toFloat(bsdf.dispersion as any);
+    if (v) (mat as any).dispersionNode = v;
+  }
+  if (bsdf.attenuationDistance != null) {
+    const v = toFloat(bsdf.attenuationDistance as any);
+    if (v) (mat as any).attenuationDistanceNode = v;
+  }
+  if (bsdf.attenuationColor != null) {
+    const v = toVec3(bsdf.attenuationColor as any);
+    if (v) (mat as any).attenuationColorNode = v;
   }
 }
 
