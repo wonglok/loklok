@@ -100,7 +100,7 @@ interface ColorStop {
 
 /** Serialised Color Ramp data from a VALTORGB node. */
 interface ColorRampData {
-  interpolation: string; // 'LINEAR' | 'CONSTANT' | 'EASE'
+  interpolation: string; // 'LINEAR' | 'CONSTANT' | 'EASE' | 'B_SPLINE' | 'CARDINAL'
   stops: ColorStop[];
 }
 
@@ -159,7 +159,10 @@ export interface TSLMaterialParams {
   alphaTest: number;
   flatShading: boolean;
   /** Resolve an image texture by name (for TEX_IMAGE nodes inside the graph). */
-  resolveImage?: (name: string, kind: "color" | "noncolor") => THREE.Texture | null;
+  resolveImage?: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null;
   // Physical material properties
   transmission: number;
   transmissionMap: THREE.Texture | null;
@@ -203,7 +206,13 @@ interface NodeRecord {
   [key: string]: NodeValue;
 }
 
-type NodeValue = number | number[] | THREE.Color | THREE.Node | TextureValue | NodeRecord;
+type NodeValue =
+  | number
+  | number[]
+  | THREE.Color
+  | THREE.Node
+  | TextureValue
+  | NodeRecord;
 
 /** A texture to be sampled with a UV — resolved lazily on coercion. */
 interface TextureValue {
@@ -277,40 +286,145 @@ function toFloat(v: NodeValue | null | undefined): any {
 // Color Ramp — canvas-based gradient texture
 // ---------------------------------------------------------------------------
 
-/** Cached gradient textures keyed by a hash of the stop data. */
+/** Cached gradient textures keyed by a hash of stop data + interpolation. */
 const _rampTextureCache = new Map<string, THREE.CanvasTexture>();
+
+type RGBA = [number, number, number, number];
+
+/** Clamp an index into the stop array (neighbour lookup for splines). */
+function stopRGBA(stops: ColorStop[], idx: number): RGBA {
+  const s = stops[Math.max(0, Math.min(stops.length - 1, idx))];
+  return [s.color[0], s.color[1], s.color[2], s.color.length >= 4 ? s.color[3] : 1.0];
+}
+
+function lerpRGBA(a: RGBA, b: RGBA, t: number): RGBA {
+  return [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+    a[3] + (b[3] - a[3]) * t,
+  ];
+}
+
+/** Cubic B-spline through four control points (Blender B_SPLINE). */
+function bSplineRGBA(p0: RGBA, p1: RGBA, p2: RGBA, p3: RGBA, t: number): RGBA {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const w0 = (1 - t) * (1 - t) * (1 - t) / 6;
+  const w1 = (3 * t3 - 6 * t2 + 4) / 6;
+  const w2 = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6;
+  const w3 = t3 / 6;
+  return [
+    p0[0] * w0 + p1[0] * w1 + p2[0] * w2 + p3[0] * w3,
+    p0[1] * w0 + p1[1] * w1 + p2[1] * w2 + p3[1] * w3,
+    p0[2] * w0 + p1[2] * w1 + p2[2] * w2 + p3[2] * w3,
+    p0[3] * w0 + p1[3] * w1 + p2[3] * w2 + p3[3] * w3,
+  ];
+}
+
+/** Catmull-Rom spline (Blender CARDINAL, tension 0.5). */
+function cardinalRGBA(p0: RGBA, p1: RGBA, p2: RGBA, p3: RGBA, t: number): RGBA {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const w0 = -0.5 * t + t2 - 0.5 * t3;
+  const w1 = 1 - 2.5 * t2 + 1.5 * t3;
+  const w2 = 0.5 * t + 2 * t2 - 1.5 * t3;
+  const w3 = -0.5 * t2 + 0.5 * t3;
+  return [
+    p0[0] * w0 + p1[0] * w1 + p2[0] * w2 + p3[0] * w3,
+    p0[1] * w0 + p1[1] * w1 + p2[1] * w2 + p3[1] * w3,
+    p0[2] * w0 + p1[2] * w1 + p2[2] * w2 + p3[2] * w3,
+    p0[3] * w0 + p1[3] * w1 + p2[3] * w2 + p3[3] * w3,
+  ];
+}
+
+/**
+ * Evaluate the ramp at a normalised position, honouring all five Blender
+ * interpolation modes: LINEAR, CONSTANT, EASE, B_SPLINE, CARDINAL.
+ * Position is clamped to the ramp's own [first, last] stop range so the
+ * endpoint colours hold outside it (matching Blender's held-extends).
+ */
+function evaluateColorRampRGBA(
+  factor: number,
+  stops: ColorStop[],
+  interpolation: string,
+): RGBA {
+  if (stops.length === 0) return [0, 0, 0, 1];
+  if (stops.length === 1) return stopRGBA(stops, 0);
+
+  const first = stops[0].position;
+  const last = stops[stops.length - 1].position;
+  const t = Math.max(first, Math.min(last, factor));
+
+  let i = stops.length - 2;
+  for (let k = 0; k < stops.length - 1; k++) {
+    if (t <= stops[k + 1].position) {
+      i = k;
+      break;
+    }
+  }
+
+  const p0 = stops[i].position;
+  const p1 = stops[i + 1].position;
+  const range = p1 - p0;
+  const segT = range < 1e-6 ? 0 : (t - p0) / range;
+
+  const a = stopRGBA(stops, i);
+  const b = stopRGBA(stops, i + 1);
+
+  switch (interpolation) {
+    case "CONSTANT":
+      // Blender switches to the next stop at the segment midpoint.
+      return segT < 0.5 ? a : b;
+    case "EASE": {
+      // Blender: smootherstep applied to pow(fac, 1/10).
+      const fc = Math.pow(segT, 0.1);
+      const e = 3 * fc * fc - 2 * fc * fc * fc;
+      return lerpRGBA(a, b, e);
+    }
+    case "B_SPLINE":
+      return bSplineRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+    case "CARDINAL":
+      return cardinalRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+    case "LINEAR":
+    default:
+      return lerpRGBA(a, b, segT);
+  }
+}
 
 function generateColorRampTexture(
   stops: ColorStop[],
-  _interpolation: string,
+  interpolation: string,
 ): THREE.CanvasTexture {
-  const hash = JSON.stringify({ stops });
+  const hash = JSON.stringify({ stops, interpolation });
   const cached = _rampTextureCache.get(hash);
-  if (cached) {
-    cached.needsUpdate = true;
-  }
   if (cached) return cached;
 
+  // Bake per-pixel so the interpolation mode is honoured (the native canvas
+  // linear gradient only ever produced a LINEAR ramp).
   const width = 256;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = 1;
   const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(width, 1);
 
-  const grad = ctx.createLinearGradient(0, 0, width, 0);
-  for (const stop of stops) {
-    const r = Math.round(stop.color[0] * 255);
-    const g = Math.round(stop.color[1] * 255);
-    const b = Math.round(stop.color[2] * 255);
-    const a = stop.color.length >= 4 ? stop.color[3] : 1;
-    grad.addColorStop(stop.position, `rgba(${r},${g},${b},${a})`);
+  for (let x = 0; x < width; x++) {
+    const t = x / (width - 1);
+    const [r, g, b, a] = evaluateColorRampRGBA(t, stops, interpolation);
+    const px = x * 4;
+    img.data[px] = Math.round(Math.max(0, Math.min(1, r)) * 255);
+    img.data[px + 1] = Math.round(Math.max(0, Math.min(1, g)) * 255);
+    img.data[px + 2] = Math.round(Math.max(0, Math.min(1, b)) * 255);
+    img.data[px + 3] = Math.round(Math.max(0, Math.min(1, a)) * 255);
   }
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, width, 1);
+  ctx.putImageData(img, 0, 0);
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
 
@@ -318,35 +432,14 @@ function generateColorRampTexture(
   return tex;
 }
 
+/** RGB-only helper for the constant-colour fast path. */
 function evaluateColorRampAt(
   factor: number,
   stops: ColorStop[],
   interpolation: string,
 ): [number, number, number] {
-  const t = Math.max(0, Math.min(1, factor));
-
-  for (let i = 0; i < stops.length - 1; i++) {
-    const p0 = stops[i].position;
-    const p1 = stops[i + 1].position;
-    if (t < p0 || t > p1) continue;
-
-    const range = p1 - p0;
-    if (Math.abs(range) < 0.00001)
-      return stops[i].color.slice(0, 3) as [number, number, number];
-
-    let segT = (t - p0) / range;
-    if (interpolation === "CONSTANT") segT = segT >= 0.5 ? 1 : 0;
-    else if (interpolation === "EASE") segT = segT * segT * (3 - 2 * segT);
-
-    return [
-      stops[i].color[0] + (stops[i + 1].color[0] - stops[i].color[0]) * segT,
-      stops[i].color[1] + (stops[i + 1].color[1] - stops[i].color[1]) * segT,
-      stops[i].color[2] + (stops[i + 1].color[2] - stops[i].color[2]) * segT,
-    ];
-  }
-
-  const last = stops[stops.length - 1];
-  return last.color.slice(0, 3) as [number, number, number];
+  const [r, g, b] = evaluateColorRampRGBA(factor, stops, interpolation);
+  return [r, g, b];
 }
 
 /** Marker returned by VALTORGB evaluation to signal a ramp texture override. */
@@ -435,7 +528,10 @@ interface NodeCtx {
   node: BlenderNode;
   getInput: (name: string) => NodeValue | null | undefined;
   getProps: <T>(name: string, fallback: T) => T;
-  resolveImage: (name: string, kind: "color" | "noncolor") => THREE.Texture | null;
+  resolveImage: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null;
 }
 
 /** Fresnel term: pow(1 - dot(N, V), power). */
@@ -574,15 +670,32 @@ const BLEND_MODES: Record<string, (a: any, b: any, fac: any) => any> = {
   LIGHTEN: (a, b, fac) => blendFactor(a, b, fac, max(a, b)),
   SCREEN: (a, b, fac) => blendFactor(a, b, fac, blendScreen(a, b)),
   DODGE: (a, b, fac) => blendFactor(a, b, fac, blendDodge(a, b)),
-  ADD: (a, b, fac) => blendFactor(a, b, fac, clamp(add(a, b), float(0), float(1))),
+  ADD: (a, b, fac) =>
+    blendFactor(a, b, fac, clamp(add(a, b), float(0), float(1))),
   OVERLAY: (a, b, fac) => blendFactor(a, b, fac, blendOverlay(a, b)),
   SOFT_LIGHT: (a, b, fac) =>
-    blendFactor(a, b, fac, mix(mul(a, b), sub(add(mul(float(2), a), b), float(1)), step(float(0.5), a))),
+    blendFactor(
+      a,
+      b,
+      fac,
+      mix(
+        mul(a, b),
+        sub(add(mul(float(2), a), b), float(1)),
+        step(float(0.5), a),
+      ),
+    ),
   LINEAR_LIGHT: (a, b, fac) =>
-    blendFactor(a, b, fac, clamp(add(a, sub(mul(float(2), b), float(1))), float(0), float(1))),
+    blendFactor(
+      a,
+      b,
+      fac,
+      clamp(add(a, sub(mul(float(2), b), float(1))), float(0), float(1)),
+    ),
   DIFFERENCE: (a, b, fac) => blendFactor(a, b, fac, abs(sub(a, b))),
-  SUBTRACT: (a, b, fac) => blendFactor(a, b, fac, clamp(sub(a, b), float(0), float(1))),
-  DIVIDE: (a, b, fac) => blendFactor(a, b, fac, clamp(div(a, b), float(0), float(1))),
+  SUBTRACT: (a, b, fac) =>
+    blendFactor(a, b, fac, clamp(sub(a, b), float(0), float(1))),
+  DIVIDE: (a, b, fac) =>
+    blendFactor(a, b, fac, clamp(div(a, b), float(0), float(1))),
   HUE: (a, b, fac) => blendFactor(a, b, fac, b),
   SATURATION: (a, b, fac) => blendFactor(a, b, fac, b),
   COLOR: (a, b, fac) => blendFactor(a, b, fac, b),
@@ -826,7 +939,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     random: hash(positionLocal as any) as unknown as NodeValue,
   }),
 
-  "vertex-color": () => ({ color: vertexColor() as unknown as NodeValue, alpha: float(1) }),
+  "vertex-color": () => ({
+    color: vertexColor() as unknown as NodeValue,
+    alpha: float(1),
+  }),
 
   wireframe: () => ({ fac: float(1) }),
 
@@ -862,7 +978,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const roughness = toFloat(ctx.getInput("roughness") ?? 0.5);
     const distortion = toFloat(ctx.getInput("distortion") ?? 0);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const scaled = mul(pos, scale) as any;
     const noiseType = ctx.getProps<string>("noise_type", "FBM");
     let fac: any;
@@ -883,7 +1001,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   "tex-voronoi": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const scaled = mul(pos, scale) as any;
     const fac = mx_worley_noise_float(scaled) as any;
     const colored = vec3(fac, fac, fac) as any;
@@ -895,7 +1015,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c1 = toVec3(ctx.getInput("color1") ?? [0.8, 0.8, 0.8]);
     const c2 = toVec3(ctx.getInput("color2") ?? [0.2, 0.2, 0.2]);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const cell = checker(mul(pos, scale) as any) as any;
     const col = mix(c2, c1, cell);
     return { color: col, fac: cell };
@@ -903,7 +1025,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
 
   "tex-gradient": (ctx) => {
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const u = (pos as any).x as any;
     const v = (pos as any).y as any;
     const typ = ctx.getProps<string>("gradient_type", "LINEAR");
@@ -935,16 +1059,25 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const detail = toFloat(ctx.getInput("detail") ?? 2);
     const roughness = toFloat(ctx.getInput("roughness") ?? 0.5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const scaled = mul(pos, scale) as any;
-    const fac = mx_fractal_noise_float(scaled, detail, float(2), roughness) as any;
+    const fac = mx_fractal_noise_float(
+      scaled,
+      detail,
+      float(2),
+      roughness,
+    ) as any;
     return { fac, color: vec3(fac, fac, fac) as any };
   },
 
   "tex-wave": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const p = mul(pos, scale) as any;
     const typ = ctx.getProps<string>("wave_type", "BANDS");
     const profile = ctx.getProps<string>("wave_profile", "SINE");
@@ -974,7 +1107,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   "tex-magic": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const fac = triNoise3D(mul(pos, scale) as any, float(0), float(1)) as any;
     return { color: vec3(fac, fac, fac) as any, fac };
   },
@@ -984,11 +1119,17 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c1 = toVec3(ctx.getInput("color1") ?? [0.8, 0.2, 0.2]);
     const c2 = toVec3(ctx.getInput("color2") ?? [0.4, 0.4, 0.4]);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector) ? toVec3((vector as any).uv) : toVec3(vector ?? [0, 0, 0]);
+    const pos = isNodeRecord(vector)
+      ? toVec3((vector as any).uv)
+      : toVec3(vector ?? [0, 0, 0]);
     const p = mul(pos, scale) as any;
     const x = fract((p as any).x as any) as any;
     const y = fract((p as any).y as any) as any;
-    const brick = select(lessThan(y, float(0.5)), step(float(0.5), x), step(float(0.25), x)) as any;
+    const brick = select(
+      lessThan(y, float(0.5)),
+      step(float(0.5), x),
+      step(float(0.25), x),
+    ) as any;
     const col = mix(c2, c1, brick);
     return { color: col, fac: brick };
   },
@@ -1069,7 +1210,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const sat = toFloat(ctx.getInput("saturation") ?? 1);
     const val = toFloat(ctx.getInput("value") ?? 1);
     const c = toVec3(ctx.getInput("color") ?? [0.5, 0.5, 0.5]);
-    const adjusted = mul(saturation(hue(c, hue) as any, sat) as any, val) as any;
+    const adjusted = mul(
+      saturation(hue(c, hue) as any, sat) as any,
+      val,
+    ) as any;
     return mix(c, adjusted, fac) as unknown as NodeValue;
   },
 
@@ -1089,23 +1233,33 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c = toVec3(ctx.getInput("color") ?? [0.5, 0.5, 0.5]);
     const bright = toFloat(ctx.getInput("bright") ?? 0);
     const contrast = toFloat(ctx.getInput("contrast") ?? 0);
-    return add(mul(sub(c, vec3(0.5, 0.5, 0.5)), contrast), add(c, vec3(bright, bright, bright))) as unknown as NodeValue;
+    return add(
+      mul(sub(c, vec3(0.5, 0.5, 0.5)), contrast),
+      add(c, vec3(bright, bright, bright)),
+    ) as unknown as NodeValue;
   },
 
-  "valtorgb": (ctx) => {
+  valtorgb: (ctx) => {
     const fac = ctx.getInput("fac");
     const rampData = ctx.node.colorRamp;
     if (!rampData || !rampData.stops || rampData.stops.length < 2) {
       const fv = typeof fac === "number" ? fac : 0.5;
       return [fv, fv, fv] as number[];
     }
-    const tex = generateColorRampTexture(rampData.stops, rampData.interpolation);
+    const tex = generateColorRampTexture(
+      rampData.stops,
+      rampData.interpolation,
+    );
 
     if (typeof fac === "number") {
       return {
         __rampTexture: true,
         texture: tex,
-        constantColor: evaluateColorRampAt(fac, rampData.stops, rampData.interpolation),
+        constantColor: evaluateColorRampAt(
+          fac,
+          rampData.stops,
+          rampData.interpolation,
+        ),
       } satisfies RampTextureMarker;
     }
     // TSL-driven factor — sample the ramp texture.
@@ -1213,24 +1367,34 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     return fn(a, b, c) as unknown as NodeValue;
   },
 
-  "sepxyz": (ctx) => {
+  sepxyz: (ctx) => {
     const v = toVec3(ctx.getInput("vector") ?? [0, 0, 0]);
-    return { x: (v as any).x as any, y: (v as any).y as any, z: (v as any).z as any };
+    return {
+      x: (v as any).x as any,
+      y: (v as any).y as any,
+      z: (v as any).z as any,
+    };
   },
 
-  "seprgb": (ctx) => {
-    const v = toVec3(ctx.getInput("image") ?? ctx.getInput("color") ?? [0, 0, 0]);
-    return { r: (v as any).r as any, g: (v as any).g as any, b: (v as any).b as any };
+  seprgb: (ctx) => {
+    const v = toVec3(
+      ctx.getInput("image") ?? ctx.getInput("color") ?? [0, 0, 0],
+    );
+    return {
+      r: (v as any).r as any,
+      g: (v as any).g as any,
+      b: (v as any).b as any,
+    };
   },
 
-  "combxyz": (ctx) => {
+  combxyz: (ctx) => {
     const x = toFloat(ctx.getInput("x") ?? 0);
     const y = toFloat(ctx.getInput("y") ?? 0);
     const z = toFloat(ctx.getInput("z") ?? 0);
     return vec3(x, y, z) as unknown as NodeValue;
   },
 
-  "combrgb": (ctx) => {
+  combrgb: (ctx) => {
     const r = toFloat(ctx.getInput("r") ?? ctx.getInput("red") ?? 0);
     const g = toFloat(ctx.getInput("g") ?? ctx.getInput("green") ?? 0);
     const b = toFloat(ctx.getInput("b") ?? ctx.getInput("blue") ?? 0);
@@ -1275,8 +1439,13 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   },
 
   displacement: (ctx) => {
-    const d = toFloat(ctx.getInput("height") ?? ctx.getInput("displacement") ?? 0);
-    return add(positionLocal as any, mul((normalLocal as any), d)) as unknown as NodeValue;
+    const d = toFloat(
+      ctx.getInput("height") ?? ctx.getInput("displacement") ?? 0,
+    );
+    return add(
+      positionLocal as any,
+      mul(normalLocal as any, d),
+    ) as unknown as NodeValue;
   },
 
   "normal-map": (ctx) => {
@@ -1301,13 +1470,18 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     } else {
       texNode = toNode(height ?? 0);
     }
-    return bumpMap(texNode, mul(strength, distance) as any) as unknown as NodeValue;
+    return bumpMap(
+      texNode,
+      mul(strength, distance) as any,
+    ) as unknown as NodeValue;
   },
 
   normal: (ctx) => {
     const n = toVec3(ctx.getInput("normal") ?? [0, 0, 1]);
     const strength = toFloat(ctx.getInput("strength") ?? 1);
-    return normalize(mix(normalLocal as any, n, strength) as any) as unknown as NodeValue;
+    return normalize(
+      mix(normalLocal as any, n, strength) as any,
+    ) as unknown as NodeValue;
   },
 
   // ---- Fallback — first connected or default input --------------------------
@@ -1332,7 +1506,10 @@ interface BSDFLike {
 /** Entry point — walk the graph from OUTPUT_MATERIAL. */
 function evaluateShaderGraph(
   graph: ShaderGraph,
-  resolveImage: (name: string, kind: "color" | "noncolor") => THREE.Texture | null,
+  resolveImage: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null,
 ): Record<string, unknown> | null {
   const outNode = graph.nodes.find((n) => n.type === "output-material");
   if (!outNode) return null;
@@ -1461,9 +1638,17 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
       const av = pa[k] ?? defaultParam(k);
       const bv = pb[k] ?? defaultParam(k);
       if (k === "baseColor") {
-        out[k] = mix(toVec3(av as any), toVec3(bv as any), fac) as unknown as NodeValue;
+        out[k] = mix(
+          toVec3(av as any),
+          toVec3(bv as any),
+          fac,
+        ) as unknown as NodeValue;
       } else {
-        out[k] = mix(toFloat(av as any), toFloat(bv as any), fac) as unknown as NodeValue;
+        out[k] = mix(
+          toFloat(av as any),
+          toFloat(bv as any),
+          fac,
+        ) as unknown as NodeValue;
       }
     }
     return out;
@@ -1479,9 +1664,15 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
       const av = pa[k];
       const bv = pb[k] ?? defaultParam(k);
       if (k === "baseColor") {
-        out[k] = add(toVec3(av as any), toVec3(bv as any)) as unknown as NodeValue;
+        out[k] = add(
+          toVec3(av as any),
+          toVec3(bv as any),
+        ) as unknown as NodeValue;
       } else {
-        out[k] = add(toFloat(av as any), toFloat(bv as any)) as unknown as NodeValue;
+        out[k] = add(
+          toFloat(av as any),
+          toFloat(bv as any),
+        ) as unknown as NodeValue;
       }
     }
     return out;
@@ -1570,7 +1761,10 @@ function _setStandardProperties(
 }
 
 /** Wire a resolved BSDF param object onto the material's TSL node properties. */
-function _applyBSDF(mat: THREE.MeshPhysicalNodeMaterial, bsdf: BSDFParams): void {
+function _applyBSDF(
+  mat: THREE.MeshPhysicalNodeMaterial,
+  bsdf: BSDFParams,
+): void {
   if (bsdf.baseColor != null) {
     const v = bsdf.baseColor;
     if (isNodeRecord(v)) {
@@ -1580,7 +1774,11 @@ function _applyBSDF(mat: THREE.MeshPhysicalNodeMaterial, bsdf: BSDFParams): void
     } else if (typeof v === "object" && (v as any).__rampTexture) {
       const marker = v as RampTextureMarker;
       if (marker.constantColor) {
-        mat.color.setRGB(marker.constantColor[0], marker.constantColor[1], marker.constantColor[2]);
+        mat.color.setRGB(
+          marker.constantColor[0],
+          marker.constantColor[1],
+          marker.constantColor[2],
+        );
       } else {
         mat.map = marker.texture;
         mat.color.setRGB(1, 1, 1);
@@ -1669,8 +1867,7 @@ export function buildTSLMaterial(
     const mat = new THREE.MeshPhysicalNodeMaterial();
     _setStandardProperties(mat, params);
 
-    const resolveImage =
-      params.resolveImage ?? (() => null);
+    const resolveImage = params.resolveImage ?? (() => null);
     const result = evaluateShaderGraph(graph, resolveImage);
     if (result && (result as BSDFLike).__bsdf) {
       const flat = resolveBSDF(result as BSDFLike);
