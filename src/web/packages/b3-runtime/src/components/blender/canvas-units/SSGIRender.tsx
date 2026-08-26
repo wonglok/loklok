@@ -172,14 +172,7 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     const ao = giPass.getAONode();
     const gi = giPass.getGINode();
 
-    const bloomColor = vec4(
-      bloom(
-        scenePassEmissive.rgba.add(vec4(scenePassColor.rgb.mul(0.5), 1.0)),
-        1,
-        1,
-        0.5,
-      ),
-    );
+    const bloomColor = vec4(bloom(scenePassColor.rgba, 0.25, 1, 0.75));
 
     const compositePass = vec4(
       scenePassColor.rgb.mul(ao.r).add(scenePassDiffuse.rgb.mul(gi.rgb)),
