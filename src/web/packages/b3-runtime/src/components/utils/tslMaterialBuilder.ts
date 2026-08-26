@@ -589,6 +589,20 @@ const BLEND_MODES: Record<string, (a: any, b: any, fac: any) => any> = {
   VALUE: (a, b, fac) => blendFactor(a, b, fac, b),
 };
 
+// --- Float blend modes (unified Mix node with data_type=FLOAT) -------------
+
+const FLOAT_BLEND_OPS: Record<string, (a: any, b: any, fac: any) => any> = {
+  MIX: (a, b, fac) => mix(a, b, fac),
+  ADD: (a, b, fac) => mix(a, add(a, b), fac),
+  MULTIPLY: (a, b, fac) => mix(a, mul(a, b), fac),
+  SUBTRACT: (a, b, fac) => mix(a, sub(a, b), fac),
+  DIVIDE: (a, b, fac) => mix(a, div(a, b), fac),
+  DARKEN: (a, b, fac) => mix(a, min(a, b), fac),
+  LIGHTEN: (a, b, fac) => mix(a, max(a, b), fac),
+  DIFFERENCE: (a, b, fac) => mix(a, abs(sub(a, b)), fac),
+  SCREEN: (a, b, fac) => mix(a, blendScreen(a, b), fac),
+};
+
 // ---------------------------------------------------------------------------
 // Recursive shader graph evaluator
 // ---------------------------------------------------------------------------
@@ -1006,6 +1020,34 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
 
   // ---- Color nodes ----------------------------------------------------------
 
+  // Unified Mix node (Blender 4.x `ShaderNodeMix`) — supersedes MixRGB/Mix.
+  // `data_type` selects FLOAT / VECTOR / COLOR / RGBA; `blend_type` is the
+  // operation (MIX, MULTIPLY, DARKEN, SCREEN, …). Sockets are A, B, Factor.
+  mix: (ctx) => {
+    const dataType = ctx.getProps<string>("data_type", "COLOR");
+    const blend = ctx.getProps<string>("blend_type", "MIX");
+    const a = ctx.getInput("a");
+    const b = ctx.getInput("b");
+    const factor =
+      ctx.getInput("factor") ?? ctx.getInput("factor-float") ?? 0.5;
+
+    if (dataType === "FLOAT") {
+      const fa = toFloat(a ?? 0);
+      const fb = toFloat(b ?? 0);
+      const f = toFloat(factor);
+      const op = FLOAT_BLEND_OPS[blend] ?? FLOAT_BLEND_OPS.MIX!;
+      return op(fa, fb, f);
+    }
+
+    // COLOR / RGBA / VECTOR — vec3 with the full colour blend set.
+    const va = toVec3(a ?? [0, 0, 0]);
+    const vb = toVec3(b ?? [1, 1, 1]);
+    const f = toFloat(factor);
+    const op = BLEND_MODES[blend] ?? BLEND_MODES.MIX!;
+    return op(va, vb, f);
+  },
+
+  // Legacy MixRGB node (Blender < 4.0) — kept for older .blend files.
   "mix-rgb": (ctx) => {
     const fac = toFloat(ctx.getInput("fac") ?? 0.5);
     const a = toVec3(ctx.getInput("color1") ?? [0, 0, 0]);
