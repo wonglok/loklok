@@ -294,7 +294,12 @@ type RGBA = [number, number, number, number];
 /** Clamp an index into the stop array (neighbour lookup for splines). */
 function stopRGBA(stops: ColorStop[], idx: number): RGBA {
   const s = stops[Math.max(0, Math.min(stops.length - 1, idx))];
-  return [s.color[0], s.color[1], s.color[2], s.color.length >= 4 ? s.color[3] : 1.0];
+  return [
+    s.color[0],
+    s.color[1],
+    s.color[2],
+    s.color.length >= 4 ? s.color[3] : 1.0,
+  ];
 }
 
 function lerpRGBA(a: RGBA, b: RGBA, t: number): RGBA {
@@ -310,7 +315,7 @@ function lerpRGBA(a: RGBA, b: RGBA, t: number): RGBA {
 function bSplineRGBA(p0: RGBA, p1: RGBA, p2: RGBA, p3: RGBA, t: number): RGBA {
   const t2 = t * t;
   const t3 = t2 * t;
-  const w0 = (1 - t) * (1 - t) * (1 - t) / 6;
+  const w0 = ((1 - t) * (1 - t) * (1 - t)) / 6;
   const w1 = (3 * t3 - 6 * t2 + 4) / 6;
   const w2 = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6;
   const w3 = t3 / 6;
@@ -383,9 +388,21 @@ function evaluateColorRampRGBA(
       return lerpRGBA(a, b, e);
     }
     case "B_SPLINE":
-      return bSplineRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      return bSplineRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
     case "CARDINAL":
-      return cardinalRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      return cardinalRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
     case "LINEAR":
     default:
       return lerpRGBA(a, b, segT);
