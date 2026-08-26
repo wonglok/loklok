@@ -162,6 +162,11 @@ function OutputPreview({ children }: { children?: ReactNode }) {
       <div className="w-full h-full">
         <CanvasGPU>
           <CameraSync />
+
+          {zipBuffer && (
+            <ProductionScene key={id} zipBuffer={zipBuffer}></ProductionScene>
+          )}
+
           <SSGIRender
             params={{
               sliceCount: 2,
@@ -171,11 +176,6 @@ function OutputPreview({ children }: { children?: ReactNode }) {
               backfaceLighting: 1,
             }}
           />
-
-          {zipBuffer && (
-            <ProductionScene key={id} zipBuffer={zipBuffer}></ProductionScene>
-          )}
-
           {children}
         </CanvasGPU>
       </div>
