@@ -3,7 +3,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import {
   OpfsBrowser,
-  ProductionViewer,
+  // ProductionViewer,
   Sidebar,
 } from "../../../../packages/b3-runtime/src";
 import { CameraSync } from "../../../../packages/b3-runtime/src/components/blender/CameraSync";
@@ -14,8 +14,9 @@ import {
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
-import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
+// import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
 import { ProductionScene } from "../../../../packages/b3-runtime/src/components/blender/viewers/ProductionViewer";
+import { BloomGlowRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/BloomRender";
 
 export function BlenderReceiver() {
   // Bumped by every snapshot — re-reads the OPFS tree so the space freed by
@@ -77,7 +78,7 @@ function BlenderReceivingCanvas() {
         <CanvasGPU>
           <SyncViewer />
           <CameraSync />
-          <SSGIRender
+          {/* <SSGIRender
             params={{
               sliceCount: 2,
               stepCount: 8,
@@ -85,7 +86,8 @@ function BlenderReceivingCanvas() {
               radius: 50,
               backfaceLighting: 1,
             }}
-          />
+          /> */}
+          {<BloomGlowRender></BloomGlowRender>}
         </CanvasGPU>
       </div>
     </div>
@@ -187,7 +189,7 @@ function OutputPreview({ children }: { children?: ReactNode }) {
             <ProductionScene key={id} zipBuffer={zipBuffer}></ProductionScene>
           )}
 
-          <SSGIRender
+          {/* <SSGIRender
             params={{
               sliceCount: 2,
               stepCount: 8,
@@ -195,7 +197,9 @@ function OutputPreview({ children }: { children?: ReactNode }) {
               radius: 50,
               backfaceLighting: 1,
             }}
-          />
+          /> */}
+          {<BloomGlowRender></BloomGlowRender>}
+
           {children}
         </CanvasGPU>
       </div>

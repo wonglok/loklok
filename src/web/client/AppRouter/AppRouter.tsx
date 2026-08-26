@@ -8,7 +8,7 @@ import { DashUILayout } from "../pages/ProjectAdminLayout/DashUILayout";
 import { Dashboard } from "../pages/ProjectAdminLayout/SubPage/Dashboard";
 import { AssetPage } from "../pages/ProjectAdminLayout/SubPage/AssetPage";
 import { SettingsPage } from "../pages/ProjectAdminLayout/SubPage/SettingsPage";
-import { BlenderReceiver } from "../pages/ProjectAdminLayout/SubPage/BlenderReceiver";
+import { BlenderReceiver } from "../pages/ProjectAdminLayout/SubPage/BloomGlowRender";
 
 export function AppRouter() {
   return (

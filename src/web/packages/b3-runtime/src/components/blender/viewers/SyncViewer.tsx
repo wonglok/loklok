@@ -185,3 +185,25 @@ export function SyncViewer() {
     </group>
   );
 }
+
+export function SyncLighting() {
+  const hdrData = useBlenderStore((s) => s.hdrData);
+  const hdrIntensity = useBlenderStore((s) => s.hdrIntensity);
+
+  const scene = useThree((r) => r.scene);
+  const gl = useThree((r) => r.gl);
+
+  // ------------------------------------------------------------------
+  // Apply HDR environment map + intensity (shared hook)
+  // ------------------------------------------------------------------
+  useEnvironmentMap({
+    scene: scene!,
+    renderer: gl,
+    hdrPixels: hdrData?.pixels,
+    intensity: hdrIntensity,
+    background: true,
+    fallbackColor: "#f4f4f4",
+  });
+
+  return null;
+}

@@ -427,6 +427,27 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 }
 
 // ---------------------------------------------------------------------------
+// Three.js scene content (rendered inside R3F Canvas)
+// ---------------------------------------------------------------------------
+
+function SceneLighting({ scene }: { scene: ProductionScene }) {
+  const gl = useThree((s) => s.gl);
+  const threeScene = useThree((s) => s.scene);
+
+  // Apply HDR environment map (shared hook — same as SyncViewer)
+  useEnvironmentMap({
+    scene: threeScene,
+    renderer: gl,
+    hdrPixels: scene.hdrBytes,
+    intensity: scene.hdrIntensity,
+    background: true,
+    fallbackColor: "#f4f4f4",
+  });
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Loading / Error / Empty states
 // ---------------------------------------------------------------------------
 
@@ -544,6 +565,7 @@ export function ProductionViewer({
       <CanvasGPU>
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
+          <SceneLighting scene={state.scene!}></SceneLighting>
           {children}
         </Suspense>
       </CanvasGPU>
@@ -610,11 +632,17 @@ export function ProductionScene({
   if (state.status === "empty") return null;
 
   if (noSuspense) {
-    return <SceneContent scene={state.scene!} />;
+    return (
+      <>
+        <SceneLighting scene={state.scene!}></SceneLighting>
+        <SceneContent scene={state.scene!} />
+      </>
+    );
   }
 
   return (
     <Suspense fallback={null}>
+      <SceneLighting scene={state.scene!}></SceneLighting>
       <SceneContent scene={state.scene!} />
     </Suspense>
   );

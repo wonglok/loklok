@@ -56,10 +56,10 @@ export const CanvasGPU: any = ({
               ...(glprops as any),
               ...props,
 
-              alpha: false,
-              antialias: false,
-              depth: false,
-              stencil: false,
+              alpha: true,
+              antialias: true,
+              depth: true,
+              stencil: true,
               multiview: true,
 
               requiredLimits: {
