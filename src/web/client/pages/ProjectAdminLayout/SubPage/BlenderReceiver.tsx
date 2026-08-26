@@ -27,43 +27,8 @@ export function BlenderReceiver() {
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
         <div className="w-full h-full flex">
-          <div className="w-full h-full">
-            <div
-              className="text-xs flex items-center justify-center"
-              style={{ height: "20px" }}
-            >
-              Blender Canvas ⬇️
-            </div>
-            <div className="w-full" style={{ height: `calc(100% - 20px)` }}>
-              <CanvasGPU>
-                <SyncViewer />
-                <CameraSync />
-                <SSGIRender
-                  params={{
-                    sliceCount: 2,
-                    stepCount: 8,
-                    giIntensity: 15,
-                    radius: 50,
-                    backfaceLighting: 1,
-                  }}
-                />
-              </CanvasGPU>
-            </div>
-          </div>
-          <div className="w-full h-full">
-            <div
-              className="text-xs flex items-center justify-center"
-              style={{ height: `calc(20px)` }}
-            >
-              Production Canvas ⬇️
-            </div>
-            <div
-              className="w-full border-t border-border"
-              style={{ height: `calc(100% - 20px)` }}
-            >
-              <OutputPreview></OutputPreview>
-            </div>
-          </div>
+          <BlenderReceivingCanvas></BlenderReceivingCanvas>
+          <ProductionCanvas></ProductionCanvas>
         </div>
         <Sidebar
           bottomRow={
@@ -75,6 +40,53 @@ export function BlenderReceiver() {
             </>
           }
         ></Sidebar>
+      </div>
+    </div>
+  );
+}
+
+function ProductionCanvas() {
+  return (
+    <div className="w-full h-full">
+      <div
+        className="text-xs flex items-center justify-center"
+        style={{ height: `calc(20px)` }}
+      >
+        Production Canvas ⬇️
+      </div>
+      <div
+        className="w-full border-t border-border"
+        style={{ height: `calc(100% - 20px)` }}
+      >
+        <OutputPreview></OutputPreview>
+      </div>
+    </div>
+  );
+}
+
+function BlenderReceivingCanvas() {
+  return (
+    <div className="w-full h-full">
+      <div
+        className="text-xs flex items-center justify-center"
+        style={{ height: "20px" }}
+      >
+        Blender Canvas ⬇️
+      </div>
+      <div className="w-full" style={{ height: `calc(100% - 20px)` }}>
+        <CanvasGPU>
+          <SyncViewer />
+          <CameraSync />
+          <SSGIRender
+            params={{
+              sliceCount: 2,
+              stepCount: 8,
+              giIntensity: 15,
+              radius: 50,
+              backfaceLighting: 1,
+            }}
+          />
+        </CanvasGPU>
       </div>
     </div>
   );
