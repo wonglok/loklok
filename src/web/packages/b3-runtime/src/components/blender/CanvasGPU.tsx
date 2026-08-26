@@ -58,12 +58,12 @@ export const CanvasGPU: any = ({
 
               alpha: false,
               antialias: false,
-              depth: true,
+              depth: false,
               stencil: false,
               multiview: true,
 
               requiredLimits: {
-                maxColorAttachments: 24,
+                maxColorAttachments: 64,
               },
             });
 
