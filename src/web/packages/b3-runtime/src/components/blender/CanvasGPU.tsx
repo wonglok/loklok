@@ -69,7 +69,7 @@ export const CanvasGPU: any = ({
 
             await renderer.init();
 
-            renderer.toneMapping = THREE.NoToneMapping;
+            renderer.toneMapping = THREE.AgXToneMapping;
             renderer.toneMappingExposure = 1;
 
             if (ref.current) {
