@@ -27,7 +27,7 @@ export function BlenderReceiver() {
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
         <div className="w-full h-full flex">
-          <div className="w-1/2 h-full">
+          <div className="w-full h-full">
             <div
               className="text-xs flex items-center justify-center"
               style={{ height: "20px" }}
@@ -50,7 +50,7 @@ export function BlenderReceiver() {
               </CanvasGPU>
             </div>
           </div>
-          <div className="w-1/2 h-full">
+          <div className="w-full h-full">
             <div
               className="text-xs flex items-center justify-center"
               style={{ height: `calc(20px)` }}
