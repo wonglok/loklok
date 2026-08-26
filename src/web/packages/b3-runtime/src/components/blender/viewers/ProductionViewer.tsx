@@ -12,10 +12,16 @@ import type {
   LightData,
   BlenderObject,
   GeoBuffer,
+  TextureData,
 } from "../../types/blenderTypes";
 import { LightFromData } from "../canvas-units/LightFromData";
 import { useMeshSync } from "../canvas-units/useMeshSync";
 import { useEnvironmentMap } from "../canvas-units/useEnvironmentMap";
+import {
+  buildGeometryFromBuffer,
+  computeMeshCacheKey,
+  type TexKind,
+} from "../../utils/meshBuilder";
 import { CanvasGPU } from "../CanvasGPU";
 
 // ---------------------------------------------------------------------------
@@ -25,12 +31,56 @@ import { CanvasGPU } from "../CanvasGPU";
 interface ProductionScene {
   objects: BlenderObject[];
   geometryMap: Map<string, GeoBuffer>;
-  textureMap: Map<string, THREE.Texture>;
+  /** Encoded texture bytes keyed by texture name. Decoded lazily per colour
+   *  space — the same image can be a colour map on one object and a
+   *  roughness map on another. */
+  textureData: Map<string, TextureData>;
+  /** Decoded textures keyed by `name:kind`. Scoped to this zip rather than
+   *  reusing meshBuilder's module-level cache, so production texture names
+   *  can't collide with the live sync scene's. */
+  textureCache: Map<string, THREE.Texture>;
   lights: LightData[];
   cameras: CameraData[];
   /** Radiance RGBE HDR buffer — decoded via HDRLoader inside Canvas. */
   hdrBytes: ArrayBuffer | null;
   hdrIntensity: number;
+}
+
+/**
+ * Decode a zip texture into a Three.js texture with the correct colour space
+ * for its usage. Mirrors meshBuilder's `getOrCreateTexture`, but backed by a
+ * scene-local cache.
+ */
+function resolveTexture(
+  scene: ProductionScene,
+  name: string | undefined,
+  kind: TexKind,
+): THREE.Texture | null {
+  if (!name) return null;
+
+  const cacheKey = `${name}:${kind}`;
+  const existing = scene.textureCache.get(cacheKey);
+  if (existing) return existing;
+
+  const entry = scene.textureData.get(name);
+  if (!entry) return null;
+
+  // Go through a Blob URL so the browser's native decoder handles the
+  // sRGB → linear conversion for colour maps.
+  const blob = new Blob([entry.bytes], { type: entry.mime });
+  const url = URL.createObjectURL(blob);
+  const texture = new THREE.TextureLoader().load(url, () =>
+    URL.revokeObjectURL(url),
+  );
+
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.flipY = true;
+  texture.colorSpace =
+    kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+
+  scene.textureCache.set(cacheKey, texture);
+  return texture;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,26 +228,19 @@ async function loadProductionScene(
     ? JSON.parse(await texManifestFile.async("text"))
     : [];
 
-  const textureMap = new Map<string, THREE.Texture>();
-  const texLoader = new THREE.TextureLoader();
+  // Keep the encoded bytes — the colour space depends on how each object
+  // uses the texture, so decoding is deferred to `resolveTexture`.
+  const textureData = new Map<string, TextureData>();
 
   for (const entry of texEntries) {
     const ext = entry.mime.split("/")[1] || "webp";
     const texFile = zip.file(`textures/${entry.name}.${ext}`);
     if (!texFile) continue;
 
-    const bytes = await texFile.async("arraybuffer");
-    const blob = new Blob([bytes], { type: entry.mime });
-    const url = URL.createObjectURL(blob);
-
-    const texture = await new Promise<THREE.Texture>((resolve, reject) => {
-      texLoader.load(url, resolve, undefined, reject);
+    textureData.set(entry.name, {
+      mime: entry.mime,
+      bytes: await texFile.async("arraybuffer"),
     });
-    URL.revokeObjectURL(url);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    textureMap.set(entry.name, texture);
   }
 
   // Decode geometries into GeoBuffer format (raw typed arrays)
@@ -254,7 +297,8 @@ async function loadProductionScene(
   return {
     objects: sceneData.objects,
     geometryMap,
-    textureMap,
+    textureData,
+    textureCache: new Map(),
     lights,
     cameras,
     hdrBytes,
@@ -286,77 +330,53 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
     scene: threeScene,
     objects: scene.objects,
     resolveTextures: (obj: BlenderObject) => ({
-      map: obj.texture ? (scene.textureMap.get(obj.texture) ?? null) : null,
-      roughnessMap: obj.roughnessMap
-        ? (scene.textureMap.get(obj.roughnessMap) ?? null)
-        : null,
-      metalnessMap: obj.metalnessMap
-        ? (scene.textureMap.get(obj.metalnessMap) ?? null)
-        : null,
-      normalMap: obj.normalMap
-        ? (scene.textureMap.get(obj.normalMap) ?? null)
-        : null,
-      emissiveMap: obj.emissiveMap
-        ? (scene.textureMap.get(obj.emissiveMap) ?? null)
-        : null,
+      map: resolveTexture(scene, obj.texture, "color"),
+      roughnessMap: resolveTexture(scene, obj.roughnessMap, "noncolor"),
+      metalnessMap: resolveTexture(scene, obj.metalnessMap, "noncolor"),
+      normalMap: resolveTexture(scene, obj.normalMap, "noncolor"),
+      emissiveMap: resolveTexture(scene, obj.emissiveMap, "color"),
     }),
     computeCacheKey: (obj: BlenderObject, textures) => {
-      // Include geometry name and texture refs in the cache key.
-      // Version is always "1" for static production scenes.
+      // Geometry in the zip is deduplicated and re-versioned to "1", so key
+      // off the canonical geometry name rather than the object name.
       const geoName: string = (obj as any).geometry ?? obj.name;
-      return [geoName, "1", "1"]
-        .concat([
-          textures.map?.uuid ?? "",
-          textures.roughnessMap?.uuid ?? "",
-          textures.metalnessMap?.uuid ?? "",
-          textures.normalMap?.uuid ?? "",
-          textures.emissiveMap?.uuid ?? "",
-        ])
-        .join("|");
+      return computeMeshCacheKey(
+        geoName,
+        obj.version,
+        scene.geometryMap.get(geoName)?.version,
+        textures.map,
+        textures.roughnessMap,
+        textures.metalnessMap,
+        textures.normalMap,
+        textures.emissiveMap,
+      );
     },
     buildGeometryMaterial: (obj: BlenderObject, textures) => {
       const geoName: string = (obj as any).geometry ?? obj.name;
       const geoBuf = scene.geometryMap.get(geoName);
       if (!geoBuf) return null;
 
-      // Build BufferGeometry from raw typed arrays
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute(
-        "position",
-        new THREE.BufferAttribute(geoBuf.vertices, 3),
-      );
-      geo.setIndex(new THREE.BufferAttribute(geoBuf.indices, 1));
-      if (geoBuf.uvs && geoBuf.uvs.length > 0) {
-        geo.setAttribute("uv", new THREE.BufferAttribute(geoBuf.uvs, 2));
-      }
-      geo.computeVertexNormals();
-
-      // Build MeshStandardMaterial matching the original ProductionViewer look
-      const opacity = obj.opacity ?? 1;
-      const alphaTest = obj.alphaTest ?? 0;
-      const isTransparent = obj.transparent === true;
-
-      const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(
-          obj.texture ? 1 : (obj.color?.[0] ?? 0.5),
-          obj.texture ? 1 : (obj.color?.[1] ?? 0.5),
-          obj.texture ? 1 : (obj.color?.[2] ?? 0.5),
-        ),
+      // Same builder as SyncViewer — a MeshPhysicalNodeMaterial carrying
+      // emissive, the Blender TSL shader graph and the physical properties,
+      // so both viewers shade identically under the shared HDRI.
+      return buildGeometryFromBuffer({
+        buf: geoBuf,
+        color: obj.color,
         roughness: obj.roughness ?? 0.5,
-        metalness: obj.metalness ?? 0,
+        metalness: obj.metalness ?? 0.0,
+        emissiveColor: obj.emissiveColor ?? [0, 0, 0],
+        emissiveIntensity: obj.emissiveIntensity ?? 0.0,
         map: textures.map,
         roughnessMap: textures.roughnessMap,
         metalnessMap: textures.metalnessMap,
         normalMap: textures.normalMap,
-        side: THREE.FrontSide,
+        emissiveMap: textures.emissiveMap,
+        transparent: obj.transparent,
+        opacity: obj.opacity,
+        alphaTest: obj.alphaTest,
+        flatShading: obj.flatShading,
+        graph: obj.graph,
       });
-
-      mat.transparent = isTransparent;
-      if (opacity < 1.0) mat.opacity = opacity;
-      if (alphaTest > 0) mat.alphaTest = alphaTest;
-      if (obj.flatShading === true) mat.flatShading = true;
-
-      return { geometry: geo, material: mat };
     },
   });
 
