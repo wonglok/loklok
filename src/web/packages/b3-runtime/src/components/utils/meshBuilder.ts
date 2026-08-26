@@ -63,6 +63,8 @@ export interface BuildGeometryParams {
   alphaTest?: number;
   flatShading?: boolean;
   graph?: ShaderGraph;
+  /** Resolve a TEX_IMAGE node's image name → THREE.Texture (graph path). */
+  resolveImage?: (name: string, kind: "color" | "noncolor") => THREE.Texture | null;
   // Physical material properties
   transmission?: number;
   transmissionMap?: THREE.Texture | null;
@@ -119,6 +121,7 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     alphaTest = 0.0,
     flatShading = false,
     graph,
+    resolveImage,
     // Physical properties
     transmission = 0,
     transmissionMap = null,
@@ -187,6 +190,7 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     opacity,
     alphaTest,
     flatShading,
+    resolveImage,
     // Physical properties
     transmission,
     transmissionMap,

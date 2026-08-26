@@ -122,6 +122,99 @@ def _slugify(name):
 
 
 # ---------------------------------------------------------------------------
+def _serialise_socket_value(entry, val):
+    """Store a socket's default value into `entry` (best-effort)."""
+    try:
+        # Handle Image data-blocks (TEX_IMAGE node "Image" socket)
+        if hasattr(val, 'name') and hasattr(val, 'size'):
+            # bpy.types.Image — store just the name
+            entry["value"] = val.name
+        elif hasattr(val, '__iter__') and not isinstance(val, str):
+            entry["value"] = [round(float(v), 7) for v in val]
+        elif hasattr(val, '__len__') and not isinstance(val, str):
+            entry["value"] = list(val)
+        else:
+            try:
+                entry["value"] = round(float(val), 7) if isinstance(val, (int, float)) else str(val)
+            except (ValueError, TypeError):
+                entry["value"] = str(val)
+    except Exception:
+        pass
+
+
+# Property identifiers that are UI-only or internal — never serialised.
+_NODE_PROP_SKIP = {
+    'inputs', 'outputs', 'internal_links', 'name', 'label', 'bl_idname', 'type',
+    'location', 'width', 'height', 'dimensions', 'hidden', 'mute', 'select',
+    'show_options', 'show_preview', 'show_texture', 'show_sidebar', 'color',
+    'use_custom_color', 'parent', 'socket_value_update', 'show_expanded',
+    'input_vertex_attribute_name', 'output_vertex_attribute_name', 'draw_buttons',
+    'rna_type', 'interface', 'preview', 'tree_type',
+}
+
+
+def _extract_node_props(node):
+    """Serialise the node's simple properties (enums, scalars, small vectors).
+
+    Catches operation enums (MATH), blend types (MIX_RGB), noise dimensions,
+    gradient types, etc. Socket values are handled separately, so any property
+    whose name collides with a socket identifier is skipped."""
+    props = {}
+    socket_names = set()
+    for sock in list(node.inputs) + list(node.outputs):
+        socket_names.add(sock.identifier)
+        socket_names.add(sock.name)
+    try:
+        for prop in node.rna_type.properties:
+            ident = prop.identifier
+            if ident in _NODE_PROP_SKIP or ident in socket_names:
+                continue
+            if prop.type == 'ENUM':
+                try:
+                    props[ident] = getattr(node, ident)
+                except Exception:
+                    pass
+            elif prop.type in ('BOOLEAN', 'INTEGER', 'FLOAT'):
+                try:
+                    v = getattr(node, ident)
+                    if isinstance(v, bool) or isinstance(v, (int, float)):
+                        props[ident] = v
+                except Exception:
+                    pass
+            elif prop.type == 'COLOR':
+                try:
+                    c = getattr(node, ident)
+                    props[ident] = [round(c.r, 7), round(c.g, 7), round(c.b, 7)]
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return props
+
+
+def _extract_curve_data(node):
+    """Serialise a CurveMapping (CURVE_RGB / CURVE_VEC / CURVE_FLOAT)."""
+    mapping = getattr(node, 'mapping', None)
+    if not mapping:
+        return None
+    curves = []
+    for curve in mapping.curves:
+        pts = []
+        for p in curve.points:
+            pts.append([round(p.location[0], 7), round(p.location[1], 7)])
+        curves.append(pts)
+    return {
+        "extend": getattr(mapping, 'extend', 'HORIZONTAL'),
+        "curves": curves,
+        "tmin": getattr(mapping, 'tmin', 0.0),
+        "tmax": getattr(mapping, 'tmax', 1.0),
+        "xmin": getattr(mapping, 'xmin', 0.0),
+        "xmax": getattr(mapping, 'xmax', 1.0),
+        "ymin": getattr(mapping, 'ymin', 0.0),
+        "ymax": getattr(mapping, 'ymax', 1.0),
+    }
+
+
 def _extract_node_graph(mat):
     """Walk the material's shader node tree and serialise it.
 
@@ -130,6 +223,9 @@ def _extract_node_graph(mat):
       - type      : slugified node type (bsdf-principled, tex-image, …)
       - label     : human-readable label (Blender node label or name)
       - inputs    : list of {name (slug), value?, fromNode?, fromSocket? (slug)}
+      - outputs   : list of {name (slug), value?} — output socket defaults
+      - props     : node config (operations, blend types, dimensions, …)
+      - colorRamp / curveData / colorspace : node-specific data
 
     All identifiers are slugified so the web side can use them as-is."""
     if not mat or not mat.use_nodes:
@@ -140,39 +236,37 @@ def _extract_node_graph(mat):
         try:
             inputs = []
             for sock in node.inputs:
-                entry = {"name": _slugify(sock.name)}
+                # Use the socket identifier — duplicate display names (e.g. the
+                # two "Shader" inputs on a Mix Shader) get unique _001 suffixes.
+                entry = {"name": _slugify(sock.identifier)}
+                # Also expose the display name slug — the web side matches either.
+                entry["display"] = _slugify(sock.name)
                 if sock.is_linked:
                     for link in sock.links:
                         entry["fromNode"] = _slugify(link.from_node.name)
-                        entry["fromSocket"] = _slugify(link.from_socket.name)
+                        entry["fromSocket"] = _slugify(link.from_socket.identifier)
                         break  # only first link
                 else:
-                    try:
-                        val = sock.default_value
-                        # Handle Image data-blocks (TEX_IMAGE node "Image" socket)
-                        if hasattr(val, 'name') and hasattr(val, 'size'):
-                            # bpy.types.Image — store just the name
-                            entry["value"] = val.name
-                        elif hasattr(val, '__iter__') and not isinstance(val, str):
-                            entry["value"] = [round(float(v), 7) for v in val]
-                        elif hasattr(val, '__len__') and not isinstance(val, str):
-                            entry["value"] = list(val)
-                        else:
-                            try:
-                                entry["value"] = round(float(val), 7) if isinstance(val, (int, float)) else str(val)
-                            except (ValueError, TypeError):
-                                entry["value"] = str(val)
-                    except Exception:
-                        # Some sockets have no default_value — skip
-                        pass
+                    _serialise_socket_value(entry, sock.default_value)
                 inputs.append(entry)
 
-            nodes.append({
+            outputs = []
+            for sock in node.outputs:
+                entry = {"name": _slugify(sock.identifier)}
+                _serialise_socket_value(entry, sock.default_value)
+                outputs.append(entry)
+
+            entry = {
                 "id":    _slugify(node.name),
                 "type":  _slugify(node.type),
                 "label": getattr(node, "label", "") or node.name,
                 "inputs": inputs,
-            })
+                "outputs": outputs,
+            }
+
+            props = _extract_node_props(node)
+            if props:
+                entry["props"] = props
 
             # --- Color Ramp (valtorgb) — extract stops for TSL gradient sampling ---
             if node.type == 'VALTORGB' and hasattr(node, 'color_ramp'):
@@ -191,10 +285,24 @@ def _extract_node_graph(mat):
                         ],
                     })
                 interpolation = getattr(ramp, 'interpolation', 'LINEAR')
-                nodes[-1]["colorRamp"] = {
-                    "interpolation": interpolation,
-                    "stops": stops,
-                }
+                entry["colorRamp"] = {"interpolation": interpolation, "stops": stops}
+
+            # --- Curve mappings (curve-rgb / curve-vec / curve-float) ---
+            if node.type in ('CURVE_RGB', 'CURVE_VEC', 'CURVE_FLOAT'):
+                cd = _extract_curve_data(node)
+                if cd:
+                    entry["curveData"] = cd
+
+            # --- Image color space (tex-image) — drives sRGB vs linear sampling ---
+            if node.type == 'TEX_IMAGE':
+                img = getattr(node, 'image', None)
+                if img:
+                    try:
+                        entry["colorspace"] = img.colorspace_settings.name
+                    except Exception:
+                        pass
+
+            nodes.append(entry)
         except Exception:
             # Skip nodes that can't be serialised
             continue

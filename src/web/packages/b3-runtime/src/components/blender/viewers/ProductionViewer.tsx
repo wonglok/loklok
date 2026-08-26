@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, ReactNode } from "react";
+import { useState, useEffect, Suspense, type ReactNode } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three/webgpu";
 import JSZip from "jszip";
@@ -385,6 +385,8 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
         alphaTest: obj.alphaTest,
         flatShading: obj.flatShading,
         graph: obj.graph,
+        // Resolve TEX_IMAGE nodes by name from the zip's texture data.
+        resolveImage: (name, kind) => resolveTexture(scene, name, kind),
       });
     },
   });
