@@ -377,36 +377,38 @@ function evaluateColorRampRGBA(
   const a = stopRGBA(stops, i);
   const b = stopRGBA(stops, i + 1);
 
+  let out: RGBA;
   switch (interpolation) {
     case "CONSTANT":
       // Blender switches to the next stop at the segment midpoint.
-      return segT < 0.5 ? a : b;
+      out = segT < 0.5 ? a : b;
+      break;
     case "EASE": {
       // Blender: smootherstep applied to pow(fac, 1/10).
       const fc = Math.pow(segT, 0.1);
       const e = 3 * fc * fc - 2 * fc * fc * fc;
-      return lerpRGBA(a, b, e);
+      out = lerpRGBA(a, b, e);
+      break;
     }
     case "B_SPLINE":
-      return bSplineRGBA(
-        stopRGBA(stops, i - 1),
-        a,
-        b,
-        stopRGBA(stops, i + 2),
-        segT,
-      );
+      out = bSplineRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      break;
     case "CARDINAL":
-      return cardinalRGBA(
-        stopRGBA(stops, i - 1),
-        a,
-        b,
-        stopRGBA(stops, i + 2),
-        segT,
-      );
+      out = cardinalRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      break;
     case "LINEAR":
     default:
-      return lerpRGBA(a, b, segT);
+      out = lerpRGBA(a, b, segT);
   }
+
+  // Splines can overshoot; clamp so the ramp reads as a colour and matches the
+  // (inherently clamped) texture bake.
+  return [
+    Math.max(0, Math.min(1, out[0])),
+    Math.max(0, Math.min(1, out[1])),
+    Math.max(0, Math.min(1, out[2])),
+    Math.max(0, Math.min(1, out[3])),
+  ];
 }
 
 function generateColorRampTexture(
