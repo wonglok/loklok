@@ -391,10 +391,22 @@ function evaluateColorRampRGBA(
       break;
     }
     case "B_SPLINE":
-      out = bSplineRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      out = bSplineRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
       break;
     case "CARDINAL":
-      out = cardinalRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      out = cardinalRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
       break;
     case "LINEAR":
     default:
