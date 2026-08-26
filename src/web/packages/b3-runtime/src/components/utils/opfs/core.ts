@@ -395,6 +395,80 @@ export class OpfsFS {
   }
 
   // ------------------------------------------------------------------
+  // Pruning
+  // ------------------------------------------------------------------
+
+  /**
+   * Delete raw-view binaries the given scene no longer references, and drop
+   * their manifest entries.
+   *
+   * Writes are additive — `writeTexture` / `writeGeometry` only ever create
+   * or overwrite — and the Blender store's texture/geometry maps are
+   * append-only for the life of a WebSocket session. Without this, every
+   * object or material deleted or renamed in Blender leaves its binaries in
+   * OPFS forever.
+   *
+   * Returns the file and directory names that were removed.
+   */
+  async pruneUnused(
+    scene: SceneData,
+  ): Promise<{ textures: string[]; geometry: string[] }> {
+    const root = await this.init();
+    const removed = { textures: [] as string[], geometry: [] as string[] };
+
+    // ---- Textures ----
+    const keepTextures = referencedTextures(scene);
+    const texDir = await ensureDir(root, "current-rawdata-view/textures");
+
+    const texManifest =
+      (await readJSON<TextureEntry[]>(texDir, "manifest.json")) ?? [];
+    const keptTexEntries = texManifest.filter((e) => keepTextures.has(e.name));
+
+    // Every file the kept manifest expects on disk. Anything else is an
+    // orphan — a texture that left the scene, or a stale extension left
+    // behind when a texture's format changed (foo.png → foo.webp).
+    const expectedTexFiles = new Set(
+      keptTexEntries.map((e) => `${e.name}.${mimeToExt(e.mime)}`),
+    );
+    expectedTexFiles.add("manifest.json");
+
+    for (const fileName of await listChildren(texDir, "file")) {
+      if (expectedTexFiles.has(fileName)) continue;
+      await removeFile(texDir, fileName);
+      removed.textures.push(fileName);
+    }
+
+    if (keptTexEntries.length !== texManifest.length) {
+      await writeJSON(texDir, "manifest.json", keptTexEntries);
+    }
+
+    // ---- Geometry ----
+    const keepGeometry = referencedGeometry(scene);
+    const geoRoot = await ensureDir(root, "current-rawdata-view/geometry");
+
+    const geoManifest =
+      (await readJSON<GeometryEntry[]>(geoRoot, "manifest.json")) ?? [];
+    const keptGeoEntries = geoManifest.filter((e) => keepGeometry.has(e.name));
+
+    // Derive the keep set from the scene rather than the manifest, so a
+    // manifest that has drifted out of sync can't delete live geometry.
+    // Directory names are sanitised on write, so compare in that space.
+    const expectedGeoDirs = new Set([...keepGeometry].map(sanitiseName));
+
+    for (const dirName of await listChildren(geoRoot, "directory")) {
+      if (expectedGeoDirs.has(dirName)) continue;
+      await removeDir(geoRoot, dirName);
+      removed.geometry.push(dirName);
+    }
+
+    if (keptGeoEntries.length !== geoManifest.length) {
+      await writeJSON(geoRoot, "manifest.json", keptGeoEntries);
+    }
+
+    return removed;
+  }
+
+  // ------------------------------------------------------------------
   // Snapshot — write everything from the blender store at once
   // ------------------------------------------------------------------
 
@@ -423,24 +497,40 @@ export class OpfsFS {
 
     await this.writeScene(scene);
 
+    // NOTE: a stale hdr/ is deliberately left alone. The store can't tell
+    // "Blender has no world HDR" apart from "the HDR message hasn't arrived
+    // yet" — both are `hdrData: null` — so removing it here could silently
+    // drop a good HDRI on an early snapshot. It's a single file, unlike the
+    // per-object textures and geometry below.
     if (hdrPixels && hdrWidth > 0 && hdrHeight > 0) {
       await this.writeHDR(hdrPixels, hdrWidth, hdrHeight, hdrIntensity);
     }
 
+    // The store's maps are append-only across a session, so they can hold
+    // entries for objects that have since left the scene. Skip those rather
+    // than writing bytes only to prune them a moment later.
+    const keepTextures = referencedTextures(scene);
+    const keepGeometry = referencedGeometry(scene);
+
     if (textures) {
       for (const [name, data] of textures) {
+        if (!keepTextures.has(name)) continue;
         await this.writeTexture(name, data);
       }
     }
 
     if (geoBuffers) {
       for (const [name, buf] of geoBuffers) {
+        if (!keepGeometry.has(name)) continue;
         await this.writeGeometry(name, buf);
       }
     }
 
     if (cameras) await this.writeCameras(cameras);
     if (lights) await this.writeLights(lights);
+
+    // Sweep anything left over from earlier snapshots.
+    await this.pruneUnused(scene);
   }
 
   // ------------------------------------------------------------------
@@ -554,6 +644,43 @@ function mimeToExt(mime: string): string {
 /** Replace characters that are invalid in file names. */
 function sanitiseName(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, "_");
+}
+
+/** Texture names referenced by any object in the scene. */
+function referencedTextures(scene: SceneData): Set<string> {
+  const names = new Set<string>();
+  for (const obj of scene.objects) {
+    for (const ref of [
+      obj.texture,
+      obj.roughnessMap,
+      obj.metalnessMap,
+      obj.normalMap,
+      obj.emissiveMap,
+    ]) {
+      if (ref) names.add(ref);
+    }
+  }
+  return names;
+}
+
+/** Geometry keys referenced by the scene. Raw-view geometry is keyed by
+ *  object name — the optimiser is what later dedupes and rewrites these to
+ *  canonical geometry names in the optimised view. */
+function referencedGeometry(scene: SceneData): Set<string> {
+  return new Set(scene.objects.map((o) => o.name));
+}
+
+/** List the immediate child names of a directory, by kind. Collected up front
+ *  so callers can delete entries without mutating a live async iterator. */
+async function listChildren(
+  dir: FileSystemDirectoryHandle,
+  kind: "file" | "directory",
+): Promise<string[]> {
+  const names: string[] = [];
+  for await (const [name, handle] of (dir as any).entries()) {
+    if (handle.kind === kind) names.push(name);
+  }
+  return names;
 }
 
 /** Recursively walk an OPFS directory, building a tree node with sizes. */

@@ -16,9 +16,11 @@ import {
   unpackRGBToNormal,
   vec3,
   bool,
+  emissive,
 } from "three/tsl";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -129,6 +131,7 @@ export function SSGIRender({ params }: SSGIRenderProps) {
         diffuseColor,
         normal: packNormalToRGB(normalView),
         velocity,
+        emissive,
       }),
     );
 
@@ -145,6 +148,7 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     const scenePassDepth = scenePass.getTextureNode("depth");
     const scenePassNormal = scenePass.getTextureNode("normal");
     const scenePassVelocity = scenePass.getTextureNode("velocity");
+    const scenePassEmissive = scenePass.getTextureNode("emissive");
 
     // Unpack normals for SSGI consumption
     const sceneNormal = sample((uv) => {
@@ -168,6 +172,15 @@ export function SSGIRender({ params }: SSGIRenderProps) {
     const ao = giPass.getAONode();
     const gi = giPass.getGINode();
 
+    const bloomColor = vec4(
+      bloom(
+        scenePassEmissive.rgba.add(vec4(scenePassColor.rgb.mul(0.5), 1.0)),
+        1,
+        1,
+        0.5,
+      ),
+    );
+
     const compositePass = vec4(
       scenePassColor.rgb.mul(ao.r).add(scenePassDiffuse.rgb.mul(gi.rgb)),
       scenePassColor.a,
@@ -175,7 +188,7 @@ export function SSGIRender({ params }: SSGIRenderProps) {
 
     // TRAA temporal anti-aliasing / denoising
     const traaPass = traa(
-      compositePass.rgba,
+      compositePass.rgba.add(vec4(bloomColor.rgb, 0.0)),
       scenePassDepth,
       scenePassVelocity,
       camera,

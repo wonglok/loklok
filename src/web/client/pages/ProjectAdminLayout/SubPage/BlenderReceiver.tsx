@@ -18,43 +18,51 @@ import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blend
 import { ProductionScene } from "../../../../packages/b3-runtime/src/components/blender/viewers/ProductionViewer";
 
 export function BlenderReceiver() {
+  // Bumped by every snapshot — re-reads the OPFS tree so the space freed by
+  // pruning is actually visible after pressing save.
+  const deploymentVersion = useBlenderStore((s) => s.deploymentVersion);
+
   return (
     <div className="relative w-full h-full">
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
-        <div className="w-full h-full">
-          <div
-            className="text-xs flex items-center justify-center"
-            style={{ height: "20px" }}
-          >
-            Blender Canvas ⬇️
+        <div className="w-full h-full flex">
+          <div className="w-1/2 h-full">
+            <div
+              className="text-xs flex items-center justify-center"
+              style={{ height: "20px" }}
+            >
+              Blender Canvas ⬇️
+            </div>
+            <div className="w-full" style={{ height: `calc(100% - 20px)` }}>
+              <CanvasGPU>
+                <SyncViewer />
+                <CameraSync />
+                <SSGIRender
+                  params={{
+                    sliceCount: 2,
+                    stepCount: 8,
+                    giIntensity: 15,
+                    radius: 50,
+                    backfaceLighting: 1,
+                  }}
+                />
+              </CanvasGPU>
+            </div>
           </div>
-          <div className="w-full" style={{ height: `calc(50% - 20px)` }}>
-            <CanvasGPU>
-              <SyncViewer />
-              <CameraSync />
-              <SSGIRender
-                params={{
-                  sliceCount: 2,
-                  stepCount: 8,
-                  giIntensity: 15,
-                  radius: 50,
-                  backfaceLighting: 1,
-                }}
-              />
-            </CanvasGPU>
-          </div>
-          <div
-            className="text-xs flex items-center justify-center"
-            style={{ height: `calc(20px)` }}
-          >
-            Production Canvas ⬇️
-          </div>
-          <div
-            className="w-full border-t border-border"
-            style={{ height: `calc(50% - 20px)` }}
-          >
-            <OutputPreview></OutputPreview>
+          <div className="w-1/2 h-full">
+            <div
+              className="text-xs flex items-center justify-center"
+              style={{ height: `calc(20px)` }}
+            >
+              Production Canvas ⬇️
+            </div>
+            <div
+              className="w-full border-t border-border"
+              style={{ height: `calc(100% - 20px)` }}
+            >
+              <OutputPreview></OutputPreview>
+            </div>
           </div>
         </div>
         <Sidebar
@@ -62,7 +70,7 @@ export function BlenderReceiver() {
             <>
               {/* ---- OPFS Browser ---- */}
               <div className="px-3.5 py-2.5 border-t border-border h-[400px] overflow-y-scroll">
-                <OpfsBrowser refreshKey={0} />
+                <OpfsBrowser refreshKey={deploymentVersion} />
               </div>
             </>
           }
