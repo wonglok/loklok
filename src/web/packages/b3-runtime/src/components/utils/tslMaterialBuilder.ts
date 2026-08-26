@@ -282,6 +282,24 @@ function toFloat(v: NodeValue | null | undefined): any {
   return float(0);
 }
 
+/**
+ * Resolve a texture node's `Vector` input into a UV node, or `undefined` to
+ * fall back to the default UVs. Critical: an *unconnected* Vector socket
+ * serialises its default value as `[0, 0, 0]` — that must NOT become a
+ * constant UV (which would sample a single texel). Only actual connections
+ * (tex-coord / mapping / a live TSL node) drive a custom UV.
+ */
+function resolveVectorUV(vec: NodeValue | null | undefined): any | undefined {
+  if (isNodeRecord(vec)) {
+    const inner = (vec as Record<string, NodeValue>).uv;
+    return inner ? toVec3(inner) : undefined;
+  }
+  if (vec instanceof THREE.Node || isTextureValue(vec)) {
+    return toVec3(vec);
+  }
+  return undefined; // plain number/array default → use default UVs
+}
+
 // ---------------------------------------------------------------------------
 // Color Ramp — canvas-based gradient texture
 // ---------------------------------------------------------------------------
@@ -987,15 +1005,9 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const tex = imgName ? ctx.resolveImage(imgName, kind) : null;
     if (!tex) return { color: [0, 0, 0], alpha: float(1) };
 
-    // Custom vector input (tex-coord / mapping / …)
-    const vec = ctx.getInput("vector");
-    let uvNode: any | undefined;
-    if (isNodeRecord(vec)) {
-      const inner = (vec as Record<string, NodeValue>).uv;
-      if (inner) uvNode = toVec3(inner);
-    } else if (vec != null) {
-      uvNode = toVec3(vec);
-    }
+    // Custom vector input (tex-coord / mapping / …). Unconnected vector
+    // defaults to [0,0,0] and must fall back to the default UVs.
+    const uvNode = resolveVectorUV(ctx.getInput("vector"));
 
     return {
       color: { __texture: tex, __uv: uvNode } as TextureValue,
@@ -1009,9 +1021,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const roughness = toFloat(ctx.getInput("roughness") ?? 0.5);
     const distortion = toFloat(ctx.getInput("distortion") ?? 0);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const scaled = mul(pos, scale) as any;
     const noiseType = ctx.getProps<string>("noise_type", "FBM");
     let fac: any;
@@ -1032,9 +1042,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   "tex-voronoi": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const scaled = mul(pos, scale) as any;
     const fac = mx_worley_noise_float(scaled) as any;
     const colored = vec3(fac, fac, fac) as any;
@@ -1046,9 +1054,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c1 = toVec3(ctx.getInput("color1") ?? [0.8, 0.8, 0.8]);
     const c2 = toVec3(ctx.getInput("color2") ?? [0.2, 0.2, 0.2]);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const cell = checker(mul(pos, scale) as any) as any;
     const col = mix(c2, c1, cell);
     return { color: col, fac: cell };
@@ -1056,9 +1062,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
 
   "tex-gradient": (ctx) => {
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const u = (pos as any).x as any;
     const v = (pos as any).y as any;
     const typ = ctx.getProps<string>("gradient_type", "LINEAR");
@@ -1090,9 +1094,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const detail = toFloat(ctx.getInput("detail") ?? 2);
     const roughness = toFloat(ctx.getInput("roughness") ?? 0.5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const scaled = mul(pos, scale) as any;
     const fac = mx_fractal_noise_float(
       scaled,
@@ -1106,9 +1108,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   "tex-wave": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const p = mul(pos, scale) as any;
     const typ = ctx.getProps<string>("wave_type", "BANDS");
     const profile = ctx.getProps<string>("wave_profile", "SINE");
@@ -1138,9 +1138,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   "tex-magic": (ctx) => {
     const scale = toFloat(ctx.getInput("scale") ?? 5);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const fac = triNoise3D(mul(pos, scale) as any, float(0), float(1)) as any;
     return { color: vec3(fac, fac, fac) as any, fac };
   },
@@ -1150,9 +1148,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c1 = toVec3(ctx.getInput("color1") ?? [0.8, 0.2, 0.2]);
     const c2 = toVec3(ctx.getInput("color2") ?? [0.4, 0.4, 0.4]);
     const vector = ctx.getInput("vector");
-    const pos = isNodeRecord(vector)
-      ? toVec3((vector as any).uv)
-      : toVec3(vector ?? [0, 0, 0]);
+    const pos = resolveVectorUV(vector) ?? tslUV();
     const p = mul(pos, scale) as any;
     const x = fract((p as any).x as any) as any;
     const y = fract((p as any).y as any) as any;
@@ -1177,14 +1173,7 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const imgName = typeof name === "string" ? name : undefined;
     const tex = imgName ? ctx.resolveImage(imgName, "color") : null;
     if (!tex) return { color: [0, 0, 0] };
-    const vec = ctx.getInput("vector");
-    let uvNode: any | undefined;
-    if (isNodeRecord(vec)) {
-      const inner = (vec as Record<string, NodeValue>).uv;
-      if (inner) uvNode = toVec3(inner);
-    } else if (vec != null) {
-      uvNode = toVec3(vec);
-    }
+    const uvNode = resolveVectorUV(ctx.getInput("vector"));
     return {
       color: { __texture: tex, __uv: uvNode } as TextureValue,
     };

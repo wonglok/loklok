@@ -64,7 +64,10 @@ export interface BuildGeometryParams {
   flatShading?: boolean;
   graph?: ShaderGraph;
   /** Resolve a TEX_IMAGE node's image name → THREE.Texture (graph path). */
-  resolveImage?: (name: string, kind: "color" | "noncolor") => THREE.Texture | null;
+  resolveImage?: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null;
   // Physical material properties
   transmission?: number;
   transmissionMap?: THREE.Texture | null;
