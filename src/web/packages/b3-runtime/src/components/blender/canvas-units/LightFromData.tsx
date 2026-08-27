@@ -86,21 +86,22 @@ export function LightFromData({
         />
       );
 
-    case "AREA":
-      return (
-        <rectAreaLight
-          position={position}
-          quaternion={quaternion}
-          intensity={intensity}
-          color={color}
-          width={light.width ?? 1}
-          height={light.height ?? 1}
-          // three.js RectAreaLight has no shadow support (r185) — it never
-          // initialises a `shadow` object, so enabling castShadow crashes the
-          // TSL light node (`light.shadow.shadowNode` on undefined).
-          castShadow={false}
-        />
-      );
+    // TSL dont work with area light. remove
+    // case "AREA":
+    //   return (
+    //     <rectAreaLight
+    //       position={position}
+    //       quaternion={quaternion}
+    //       intensity={intensity}
+    //       color={color}
+    //       width={light.width ?? 1}
+    //       height={light.height ?? 1}
+    //       // three.js RectAreaLight has no shadow support (r185) — it never
+    //       // initialises a `shadow` object, so enabling castShadow crashes the
+    //       // TSL light node (`light.shadow.shadowNode` on undefined).
+    //       castShadow={false}
+    //     />
+    //   );
 
     default:
       // Unknown light type — fall back to point light
