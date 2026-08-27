@@ -105,7 +105,7 @@ async function supportsAvifEncode(): Promise<boolean> {
     const canvas = new OffscreenCanvas(2, 2);
     const blob = await canvas.convertToBlob({
       type: "image/avif",
-      quality: 0.5,
+      quality: 1.0,
     });
     avifEncodeSupported = blob.type === "image/avif";
   } catch {
@@ -370,9 +370,9 @@ export class OpfsOptimiser {
             blob,
             texData.mime,
             {
-              quality: 0.4,
-              maxHeight: 1024,
-              maxWidth: 1024,
+              quality: 0.75,
+              maxHeight: 2048,
+              maxWidth: 2048,
             },
           );
           const ext = mime.split("/")[1] ?? "avif";

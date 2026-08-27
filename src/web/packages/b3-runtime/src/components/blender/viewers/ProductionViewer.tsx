@@ -319,7 +319,7 @@ async function loadProductionScene(
 // Three.js scene content (rendered inside R3F Canvas)
 // ---------------------------------------------------------------------------
 
-function SceneContent({ scene }: { scene: ProductionScene }) {
+export function SceneContent({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
@@ -430,7 +430,7 @@ function SceneContent({ scene }: { scene: ProductionScene }) {
 // Three.js scene content (rendered inside R3F Canvas)
 // ---------------------------------------------------------------------------
 
-function SceneLighting({ scene }: { scene: ProductionScene }) {
+export function SceneEnvLighting({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
@@ -565,7 +565,7 @@ export function ProductionViewer({
       <CanvasGPU>
         <Suspense fallback={null}>
           <SceneContent scene={state.scene!} />
-          <SceneLighting scene={state.scene!}></SceneLighting>
+          <SceneEnvLighting scene={state.scene!}></SceneEnvLighting>
           {children}
         </Suspense>
       </CanvasGPU>
@@ -634,7 +634,7 @@ export function ProductionScene({
   if (noSuspense) {
     return (
       <>
-        <SceneLighting scene={state.scene!}></SceneLighting>
+        <SceneEnvLighting scene={state.scene!}></SceneEnvLighting>
         <SceneContent scene={state.scene!} />
       </>
     );
@@ -642,7 +642,7 @@ export function ProductionScene({
 
   return (
     <Suspense fallback={null}>
-      <SceneLighting scene={state.scene!}></SceneLighting>
+      <SceneEnvLighting scene={state.scene!}></SceneEnvLighting>
       <SceneContent scene={state.scene!} />
     </Suspense>
   );

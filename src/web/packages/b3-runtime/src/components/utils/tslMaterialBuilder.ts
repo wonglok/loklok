@@ -1688,7 +1688,11 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
     const out: BSDFParams = {};
     const keys = new Set([...Object.keys(pa), ...Object.keys(pb)]);
     // Colour-ish params are mixed as vec3; scalar params as float.
-    const VEC3_KEYS = new Set(["baseColor", "clearcoatNormal", "attenuationColor"]);
+    const VEC3_KEYS = new Set([
+      "baseColor",
+      "clearcoatNormal",
+      "attenuationColor",
+    ]);
     for (const k of keys) {
       const av = pa[k] ?? defaultParam(k);
       const bv = pb[k] ?? defaultParam(k);

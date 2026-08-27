@@ -11,7 +11,8 @@ import { CanvasGPU } from "../../../../packages/b3-runtime/src/components/blende
 import { useBlenderStore } from "../../../../packages/b3-runtime/src/components/stores/blenderStore";
 import {
   BlenderConnection,
-  SyncViewer,
+  SyncContent,
+  SyncLighting,
 } from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
 // import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
@@ -76,7 +77,8 @@ function BlenderReceivingCanvas() {
       </div>
       <div className="w-full" style={{ height: `calc(100% - 20px)` }}>
         <CanvasGPU>
-          <SyncViewer />
+          <SyncContent />
+          <SyncLighting></SyncLighting>
           <CameraSync />
           {/* <SSGIRender
             params={{

@@ -63,28 +63,16 @@ export function BlenderConnection() {
   return <></>;
 }
 
-export function SyncViewer() {
+export function SyncContent() {
   const sceneData = useBlenderStore((s) => s.sceneData);
-  const hdrData = useBlenderStore((s) => s.hdrData);
-  const hdrIntensity = useBlenderStore((s) => s.hdrIntensity);
+  // const hdrData = useBlenderStore((s) => s.hdrData);
+  // const hdrIntensity = useBlenderStore((s) => s.hdrIntensity);
   const texData = useBlenderStore((s) => s.texData);
   const geoBuffers = useBlenderStore((s) => s.geoBuffers);
   const lights = useBlenderStore((s) => s.lights);
 
   const scene = useThree((r) => r.scene);
-  const gl = useThree((r) => r.gl);
-
-  // ------------------------------------------------------------------
-  // Apply HDR environment map + intensity (shared hook)
-  // ------------------------------------------------------------------
-  useEnvironmentMap({
-    scene: scene!,
-    renderer: gl,
-    hdrPixels: hdrData?.pixels,
-    intensity: hdrIntensity,
-    background: true,
-    fallbackColor: "#f4f4f4",
-  });
+  // const gl = useThree((r) => r.gl);
 
   // ------------------------------------------------------------------
   // Sync meshes from Blender data (with InstancedMesh batching)
