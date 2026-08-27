@@ -6,7 +6,7 @@ import { Sidebar } from "./components/blender/Sidebar";
 import {
   BlenderConnection,
   RefreshButton,
-  SyncContent,
+  SyncViewer,
 } from "./components/blender/viewers/SyncViewer";
 import { OpfsBrowser } from "./components/blender/OpfsBrowser";
 import {
@@ -29,7 +29,7 @@ export {
   Sidebar,
   BlenderConnection,
   CanvasGPU,
-  SyncContent as SyncViewer,
+  SyncViewer,
   CameraSync,
   RefreshButton,
   OpfsBrowser,

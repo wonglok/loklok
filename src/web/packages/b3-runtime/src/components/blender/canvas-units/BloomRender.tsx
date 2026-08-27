@@ -25,7 +25,7 @@ interface BloomRenderProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function BloomGlowRender({ params }: BloomRenderProps) {
+export function BloomRender({ params }: BloomRenderProps) {
   const gl = useThree((s) => s.gl) as THREE.WebGPURenderer | any;
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);

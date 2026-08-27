@@ -49,7 +49,7 @@ export function useEnvironmentMap({
     if (!hdrPixels || hdrPixels.byteLength === 0) {
       // No HDR data — clear environment, use flat fallback background
       scene.environment = null;
-      // scene.background = new THREE.Color(fallbackColor);
+      scene.background = new THREE.Color(fallbackColor);
       return;
     }
 
@@ -64,9 +64,9 @@ export function useEnvironmentMap({
 
     scene.environment = envMap;
 
-    // if (background) {
-    //   scene.background = texture;
-    // }
+    if (background) {
+      scene.background = texture;
+    }
 
     texture.dispose();
     pmremGenerator.dispose();

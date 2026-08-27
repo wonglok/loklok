@@ -1,7 +1,6 @@
 import * as THREE from "three/webgpu";
 import type { TextureData, GeoBuffer } from "../types/blenderTypes";
-import type { ShaderGraph } from "../types/shaderGraph";
-import { buildTSLMaterial } from "./tslGraphBuilder";
+import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Module-level caches (shared across Viewer and export utilities)
@@ -24,24 +23,11 @@ export function getOrCreateTexture(
   kind: TexKind,
 ): THREE.Texture | null {
   const cacheKey = `${name}:${kind}`;
+  const existing = _textureCache.get(cacheKey);
+  if (existing) return existing;
+
   const texEntry = texData.get(name);
   if (!texEntry) return null;
-
-  // Recreate when the image bytes change (e.g. re-edited in Blender) so the
-  // viewer picks up the new pixels instead of the stale cached texture.
-  const existing = _textureCache.get(cacheKey);
-  if (
-    existing &&
-    (existing.userData.byteLen !== texEntry.bytes.byteLength ||
-      existing.userData.mime !== texEntry.mime)
-  ) {
-    existing.dispose();
-    if (existing.userData.url) URL.revokeObjectURL(existing.userData.url);
-    _textureCache.delete(cacheKey);
-  }
-
-  const cached = _textureCache.get(cacheKey);
-  if (cached) return cached;
 
   // Create a Blob URL from the encoded image bytes so the browser's native
   // PNG / JPEG / WebP decoder handles the sRGB → linear conversion correctly.
@@ -55,12 +41,6 @@ export function getOrCreateTexture(
   texture.colorSpace =
     kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
 
-  // Track the source bytes so a later edit with the same image name can be
-  // detected and the cache invalidated (see above).
-  texture.userData.byteLen = texEntry.bytes.byteLength;
-  texture.userData.mime = texEntry.mime;
-  texture.userData.url = url;
-
   _textureCache.set(cacheKey, texture);
   return texture;
 }
@@ -68,10 +48,6 @@ export function getOrCreateTexture(
 /** Parameters for {@link buildGeometryFromBuffer}. */
 export interface BuildGeometryParams {
   buf: GeoBuffer;
-  /** Serialised Blender shader node graph — when present, drives the material. */
-  graph?: ShaderGraph;
-  /** Resolve a graph TEX_IMAGE name → THREE.Texture (colour space from node). */
-  resolveImage?: (name: string, kind: TexKind) => THREE.Texture | null;
   color: [number, number, number];
   roughness: number;
   metalness: number;
@@ -86,6 +62,7 @@ export interface BuildGeometryParams {
   opacity?: number;
   alphaTest?: number;
   flatShading?: boolean;
+  graph?: ShaderGraph;
   // Physical material properties
   transmission?: number;
   transmissionMap?: THREE.Texture | null;
@@ -127,8 +104,6 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
 } {
   const {
     buf,
-    graph,
-    resolveImage,
     color,
     roughness,
     metalness,
@@ -143,6 +118,7 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     opacity = 1.0,
     alphaTest = 0.0,
     flatShading = false,
+    graph,
     // Physical properties
     transmission = 0,
     transmissionMap = null,
@@ -193,12 +169,10 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     geo.computeTangents();
   }
 
-  // Build the material — TSL-first via the shader-graph evaluator when a graph
-  // is present; otherwise the flat classic-property path.
+  // Build material using the TSL shader graph pipeline
   const mat = buildTSLMaterial({
     geometry: geo,
     graph,
-    resolveImage,
     color,
     roughness,
     metalness,
@@ -252,17 +226,18 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
 // ---------------------------------------------------------------------------
 
 /** Build a cache key that uniquely identifies a geometry+material combination.
- *  Objects sharing the same key can be batched into a single InstancedMesh.
- *  `objVersion` embeds the Blender graph hash, so graph edits invalidate it;
- *  every resolved texture uuid (classic + physical maps) is also hashed. */
+ *  Objects sharing the same key can be batched into a single InstancedMesh. */
 export function computeMeshCacheKey(
   objName: string,
   objVersion: string,
   geoVersion: string | undefined,
-  textures: Array<THREE.Texture | null | undefined>,
+  map: THREE.Texture | null,
+  roughnessMap: THREE.Texture | null,
+  metalnessMap: THREE.Texture | null,
+  normalMap: THREE.Texture | null,
+  emissiveMap: THREE.Texture | null,
 ): string {
-  const texPart = textures.map((t) => t?.uuid ?? "n").join("@");
-  return `${objName}@${objVersion}@${texPart}@${geoVersion ?? "n"}`;
+  return `${objName}@${objVersion}@${map?.uuid ?? "n"}@${metalnessMap?.uuid ?? "n"}@${normalMap?.uuid ?? "n"}@${roughnessMap?.uuid ?? "n"}@${emissiveMap?.uuid ?? "n"}@${geoVersion ?? "n"}`;
 }
 
 /** A managed InstancedMesh group — one draw call for N objects sharing the same geometry+material. */

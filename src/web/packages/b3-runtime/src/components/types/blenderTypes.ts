@@ -1,10 +1,10 @@
+import type { ShaderGraph } from "../utils/tslMaterialBuilder";
+
 // ---------------------------------------------------------------------------
 // Shared types for the Blender ↔ Three.js sync pipeline.
 // Moved here from useBlenderSync.ts so both the Zustand stores and consumers
 // can import them without coupling to the sync hook.
 // ---------------------------------------------------------------------------
-
-import type { ShaderGraph } from "./shaderGraph";
 
 export interface BlenderObject {
   name: string;
@@ -21,42 +21,6 @@ export interface BlenderObject {
   metalnessMap?: string;
   normalMap?: string;
   emissiveMap?: string;
-  // ---- Principled BSDF physical channels ----------------------------------
-  clearcoat?: number;
-  clearcoatRoughness?: number;
-  sheen?: number;
-  sheenRoughness?: number;
-  /** Principled BSDF "Sheen Tint" (0–1) — mixes sheen toward the base color. */
-  sheenTint?: number;
-  iridescence?: number;
-  iridescenceIOR?: number;
-  iridescenceThicknessMin?: number;
-  iridescenceThicknessMax?: number;
-  anisotropy?: number;
-  transmission?: number;
-  thickness?: number;
-  ior?: number;
-  /** Principled BSDF "Specular IOR Level" (0–1). */
-  specularIntensity?: number;
-  specularColor?: [number, number, number];
-  attenuationDistance?: number;
-  attenuationColor?: [number, number, number];
-  normalScale?: number;
-  // ---- Physical channel maps ------------------------------------------------
-  clearcoatMap?: string;
-  clearcoatRoughnessMap?: string;
-  clearcoatNormalMap?: string;
-  sheenColorMap?: string;
-  sheenRoughnessMap?: string;
-  iridescenceMap?: string;
-  iridescenceThicknessMap?: string;
-  anisotropyMap?: string;
-  transmissionMap?: string;
-  thicknessMap?: string;
-  specularColorMap?: string;
-  specularIntensityMap?: string;
-  /** Serialised Blender shader node graph — drives the TSL material. */
-  graph?: ShaderGraph;
   /** True when Blender blend mode is BLEND or HASHED. */
   transparent?: boolean;
   /** Alpha value from the Principled BSDF (1.0 = fully opaque). */
@@ -65,6 +29,8 @@ export interface BlenderObject {
   alphaTest?: number;
   /** True when all mesh faces are flat-shaded (Blender "Shade Flat"). */
   flatShading?: boolean;
+  /** Serialised Blender shader node graph for TSL material reconstruction. */
+  graph?: ShaderGraph;
   /** Geometry version — matched against GeoBuffer.version for cache invalidation. */
   version: string;
 }

@@ -105,7 +105,7 @@ async function supportsAvifEncode(): Promise<boolean> {
     const canvas = new OffscreenCanvas(2, 2);
     const blob = await canvas.convertToBlob({
       type: "image/avif",
-      quality: 1.0,
+      quality: 0.5,
     });
     avifEncodeSupported = blob.type === "image/avif";
   } catch {
