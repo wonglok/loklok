@@ -323,16 +323,6 @@ export function SceneContent({ scene }: { scene: ProductionScene }) {
   const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
-  // Apply HDR environment map (shared hook — same as SyncViewer)
-  useEnvironmentMap({
-    scene: threeScene,
-    renderer: gl,
-    hdrPixels: scene.hdrBytes,
-    intensity: scene.hdrIntensity,
-    background: true,
-    fallbackColor: "#f4f4f4",
-  });
-
   // Sync meshes via the shared hook — handles caching, InstancedMesh
   // batching, incremental updates, and cleanup.
   useMeshSync({

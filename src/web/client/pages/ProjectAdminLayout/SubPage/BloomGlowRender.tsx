@@ -15,9 +15,11 @@ export function BlenderReceiver() {
     <div className="relative w-full h-full">
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
-        <div className="w-full h-full flex">
+        <div className="w-full h-full relative">
           <BlenderReceivingCanvas></BlenderReceivingCanvas>
-          <ProductionCanvas></ProductionCanvas>
+          <div className="w-[500px] aspect-video absolute bottom-3 right-3">
+            <ProductionCanvas></ProductionCanvas>
+          </div>
         </div>
         <Sidebar
           bottomRow={
@@ -36,9 +38,9 @@ export function BlenderReceiver() {
 
 function ProductionCanvas() {
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full bo=rder">
       <div
-        className="text-xs flex items-center justify-center"
+        className="text-xs flex items-center justify-center bg-black"
         style={{ height: `calc(20px)` }}
       >
         Production Canvas
