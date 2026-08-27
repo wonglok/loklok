@@ -251,7 +251,12 @@ type RGBA = [number, number, number, number];
 
 function stopRGBA(stops: ColorStop[], idx: number): RGBA {
   const s = stops[Math.max(0, Math.min(stops.length - 1, idx))];
-  return [s.color[0], s.color[1], s.color[2], s.color.length >= 4 ? s.color[3] : 1.0];
+  return [
+    s.color[0],
+    s.color[1],
+    s.color[2],
+    s.color.length >= 4 ? s.color[3] : 1.0,
+  ];
 }
 
 function lerpRGBA(a: RGBA, b: RGBA, t: number): RGBA {
@@ -333,10 +338,22 @@ function evaluateColorRampRGBA(
       break;
     }
     case "B_SPLINE":
-      out = bSplineRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      out = bSplineRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
       break;
     case "CARDINAL":
-      out = cardinalRGBA(stopRGBA(stops, i - 1), a, b, stopRGBA(stops, i + 2), segT);
+      out = cardinalRGBA(
+        stopRGBA(stops, i - 1),
+        a,
+        b,
+        stopRGBA(stops, i + 2),
+        segT,
+      );
       break;
     case "LINEAR":
     default:
@@ -481,7 +498,10 @@ interface NodeCtx {
   node: BlenderNode;
   getInput: (name: string) => NodeValue | null | undefined;
   getProps: <T>(name: string, fallback: T) => T;
-  resolveImage: (name: string, kind: "color" | "noncolor") => THREE.Texture | null;
+  resolveImage: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null;
 }
 
 function fresnelNode(power: any): any {
@@ -627,7 +647,11 @@ const BLEND_MODES: Record<string, (a: any, b: any, fac: any) => any> = {
       a,
       b,
       fac,
-      mix(mul(a, b), sub(add(mul(float(2), a), b), float(1)), step(float(0.5), a)),
+      mix(
+        mul(a, b),
+        sub(add(mul(float(2), a), b), float(1)),
+        step(float(0.5), a),
+      ),
     ),
   LINEAR_LIGHT: (a, b, fac) =>
     blendFactor(
@@ -688,7 +712,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
       alpha: first("alpha"),
       normal: first("normal"),
       transmission: first("transmission", "transmission-weight"),
-      transmissionRoughness: first("transmission-roughness", "transmission_roughness"),
+      transmissionRoughness: first(
+        "transmission-roughness",
+        "transmission_roughness",
+      ),
       thickness: first("thickness", "transmission-thickness"),
       ior: first("ior"),
       clearcoat: first("clearcoat", "coat", "coat-weight"),
@@ -702,7 +729,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
       anisotropic: first("anisotropic"),
       anisotropicRotation: first("anisotropic-rotation"),
       iridescence: first("iridescence", "thin-film", "thin-film-weight"),
-      iridescenceThickness: first("iridescence-thickness", "thin-film-thickness"),
+      iridescenceThickness: first(
+        "iridescence-thickness",
+        "thin-film-thickness",
+      ),
       iridescenceIOR: first("iridescence-ior", "thin-film-ior"),
       dispersion: first("dispersion"),
       attenuationDistance: first("attenuation-distance"),
@@ -980,7 +1010,8 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const dim = ctx.getProps<string>("noise_dimensions", "3D");
     let f: any;
     if (dim === "1D") f = rand((pos as any).x) as any;
-    else if (dim === "2D") f = rand(vec2((pos as any).x, (pos as any).y)) as any;
+    else if (dim === "2D")
+      f = rand(vec2((pos as any).x, (pos as any).y)) as any;
     else f = rand(pos) as any;
     return { fac: f, color: vec3(f, f, f) as any };
   },
@@ -1032,7 +1063,12 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const vector = ctx.getInput("vector");
     const pos = resolveVectorUV(vector) ?? tslUV();
     const scaled = mul(pos, scale) as any;
-    const fac = mx_fractal_noise_float(scaled, detail, float(2), roughness) as any;
+    const fac = mx_fractal_noise_float(
+      scaled,
+      detail,
+      float(2),
+      roughness,
+    ) as any;
     return { fac, color: vec3(fac, fac, fac) as any };
   },
 
@@ -1105,7 +1141,8 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const blend = ctx.getProps<string>("blend_type", "MIX");
     const a = ctx.getInput("a");
     const b = ctx.getInput("b");
-    const factor = ctx.getInput("factor") ?? ctx.getInput("factor-float") ?? 0.5;
+    const factor =
+      ctx.getInput("factor") ?? ctx.getInput("factor-float") ?? 0.5;
 
     if (dataType === "FLOAT") {
       const fa = toFloat(a ?? 0);
@@ -1143,7 +1180,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const sat = toFloat(ctx.getInput("saturation") ?? 1);
     const val = toFloat(ctx.getInput("value") ?? 1);
     const c = toVec3(ctx.getInput("color") ?? [0.5, 0.5, 0.5]);
-    const adjusted = mul(saturation(hue(c, hue) as any, sat) as any, val) as any;
+    const adjusted = mul(
+      saturation(hue(c, hue) as any, sat) as any,
+      val,
+    ) as any;
     return mix(c, adjusted, fac) as unknown as NodeValue;
   },
 
@@ -1176,17 +1216,27 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
       const fv = typeof fac === "number" ? fac : 0.5;
       return [fv, fv, fv] as number[];
     }
-    const tex = generateColorRampTexture(rampData.stops, rampData.interpolation);
+    const tex = generateColorRampTexture(
+      rampData.stops,
+      rampData.interpolation,
+    );
 
     if (typeof fac === "number") {
       return {
         __rampTexture: true,
         texture: tex,
-        constantColor: evaluateColorRampAt(fac, rampData.stops, rampData.interpolation),
+        constantColor: evaluateColorRampAt(
+          fac,
+          rampData.stops,
+          rampData.interpolation,
+        ),
       } satisfies RampTextureMarker;
     }
     const fNode = toFloat(fac);
-    return tslTexture(tex, vec2(fNode, float(0)) as any) as unknown as NodeValue;
+    return tslTexture(
+      tex,
+      vec2(fNode, float(0)) as any,
+    ) as unknown as NodeValue;
   },
 
   "curve-rgb": (ctx) => {
@@ -1196,7 +1246,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     if (!cd) return toVec3(c ?? fac ?? [0.5, 0.5, 0.5]);
     const tex = generateCurveTexture(cd);
     const fNode = toFloat(fac);
-    return tslTexture(tex, vec2(fNode, float(0)) as any) as unknown as NodeValue;
+    return tslTexture(
+      tex,
+      vec2(fNode, float(0)) as any,
+    ) as unknown as NodeValue;
   },
 
   "curve-vec": (ctx) => {
@@ -1205,7 +1258,10 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     if (!cd) return toVec3(fac ?? [0.5, 0.5, 0.5]);
     const tex = generateCurveTexture(cd);
     const fNode = toFloat(fac);
-    return tslTexture(tex, vec2(fNode, float(0)) as any) as unknown as NodeValue;
+    return tslTexture(
+      tex,
+      vec2(fNode, float(0)) as any,
+    ) as unknown as NodeValue;
   },
 
   "curve-float": (ctx) => {
@@ -1224,7 +1280,8 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const g = toFloat(ctx.getInput("green") ?? 0);
     const b = toFloat(ctx.getInput("blue") ?? 0);
     const rgb = vec3(r, g, b) as any;
-    if (mode === "HSV" || mode === "HSL") return mx_hsvtorgb(rgb) as unknown as NodeValue;
+    if (mode === "HSV" || mode === "HSL")
+      return mx_hsvtorgb(rgb) as unknown as NodeValue;
     return rgb as unknown as NodeValue;
   },
 
@@ -1233,9 +1290,17 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     const c = toVec3(ctx.getInput("color") ?? [0.5, 0.5, 0.5]);
     if (mode === "HSV" || mode === "HSL") {
       const hsv = mx_rgbtohsv(c) as any;
-      return { red: (hsv as any).x, green: (hsv as any).y, blue: (hsv as any).z };
+      return {
+        red: (hsv as any).x,
+        green: (hsv as any).y,
+        blue: (hsv as any).z,
+      };
     }
-    return { red: (c as any).r as any, green: (c as any).g as any, blue: (c as any).b as any };
+    return {
+      red: (c as any).r as any,
+      green: (c as any).g as any,
+      blue: (c as any).b as any,
+    };
   },
 
   clamp: (ctx) => {
@@ -1279,12 +1344,22 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
 
   sepxyz: (ctx) => {
     const v = toVec3(ctx.getInput("vector") ?? [0, 0, 0]);
-    return { x: (v as any).x as any, y: (v as any).y as any, z: (v as any).z as any };
+    return {
+      x: (v as any).x as any,
+      y: (v as any).y as any,
+      z: (v as any).z as any,
+    };
   },
 
   seprgb: (ctx) => {
-    const v = toVec3(ctx.getInput("image") ?? ctx.getInput("color") ?? [0, 0, 0]);
-    return { r: (v as any).r as any, g: (v as any).g as any, b: (v as any).b as any };
+    const v = toVec3(
+      ctx.getInput("image") ?? ctx.getInput("color") ?? [0, 0, 0],
+    );
+    return {
+      r: (v as any).r as any,
+      g: (v as any).g as any,
+      b: (v as any).b as any,
+    };
   },
 
   combxyz: (ctx) => {
@@ -1334,8 +1409,13 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
   },
 
   displacement: (ctx) => {
-    const d = toFloat(ctx.getInput("height") ?? ctx.getInput("displacement") ?? 0);
-    return add(positionLocal as any, mul(normalLocal as any, d)) as unknown as NodeValue;
+    const d = toFloat(
+      ctx.getInput("height") ?? ctx.getInput("displacement") ?? 0,
+    );
+    return add(
+      positionLocal as any,
+      mul(normalLocal as any, d),
+    ) as unknown as NodeValue;
   },
 
   "normal-map": (ctx) => {
@@ -1360,13 +1440,18 @@ const NODE_BUILDERS: Record<string, (ctx: NodeCtx) => any> = {
     } else {
       texNode = toNode(height ?? 0);
     }
-    return bumpMap(texNode, mul(strength, distance) as any) as unknown as NodeValue;
+    return bumpMap(
+      texNode,
+      mul(strength, distance) as any,
+    ) as unknown as NodeValue;
   },
 
   normal: (ctx) => {
     const n = toVec3(ctx.getInput("normal") ?? [0, 0, 1]);
     const strength = toFloat(ctx.getInput("strength") ?? 1);
-    return normalize(mix(normalLocal as any, n, strength) as any) as unknown as NodeValue;
+    return normalize(
+      mix(normalLocal as any, n, strength) as any,
+    ) as unknown as NodeValue;
   },
 
   // ---- Fallback — first connected or default input --------------------------
@@ -1390,7 +1475,10 @@ interface BSDFLike {
 
 function evaluateShaderGraph(
   graph: ShaderGraph,
-  resolveImage: (name: string, kind: "color" | "noncolor") => THREE.Texture | null,
+  resolveImage: (
+    name: string,
+    kind: "color" | "noncolor",
+  ) => THREE.Texture | null,
 ): Record<string, unknown> | null {
   const outNode = graph.nodes.find((n) => n.type === "output-material");
   if (!outNode) return null;
@@ -1412,7 +1500,9 @@ function evaluateShaderGraph(
     }
 
     const getInput = (name: string): NodeValue | null | undefined => {
-      const sock = node.inputs.find((s) => s.name === name || s.display === name);
+      const sock = node.inputs.find(
+        (s) => s.name === name || s.display === name,
+      );
       if (!sock) return null;
       if (sock.fromNode) {
         const up = evalNode(sock.fromNode);
@@ -1527,14 +1617,29 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
     const pb = resolveBSDF(b, depth + 1);
     const out: BSDFParams = {};
     const keys = new Set([...Object.keys(pa), ...Object.keys(pb)]);
-    const VEC3_KEYS = new Set(["baseColor", "clearcoatNormal", "attenuationColor", "emissiveColor", "sheenTint", "specularTint"]);
+    const VEC3_KEYS = new Set([
+      "baseColor",
+      "clearcoatNormal",
+      "attenuationColor",
+      "emissiveColor",
+      "sheenTint",
+      "specularTint",
+    ]);
     for (const k of keys) {
       const av = pa[k] ?? defaultParam(k);
       const bv = pb[k] ?? defaultParam(k);
       if (VEC3_KEYS.has(k)) {
-        out[k] = mix(toVec3(av as any), toVec3(bv as any), fac) as unknown as NodeValue;
+        out[k] = mix(
+          toVec3(av as any),
+          toVec3(bv as any),
+          fac,
+        ) as unknown as NodeValue;
       } else {
-        out[k] = mix(toFloat(av as any), toFloat(bv as any), fac) as unknown as NodeValue;
+        out[k] = mix(
+          toFloat(av as any),
+          toFloat(bv as any),
+          fac,
+        ) as unknown as NodeValue;
       }
     }
     return out;
@@ -1549,10 +1654,20 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
     for (const k of Object.keys(pa)) {
       const av = pa[k];
       const bv = pb[k] ?? defaultParam(k);
-      if (k === "baseColor" || k === "emissiveColor" || k === "attenuationColor") {
-        out[k] = add(toVec3(av as any), toVec3(bv as any)) as unknown as NodeValue;
+      if (
+        k === "baseColor" ||
+        k === "emissiveColor" ||
+        k === "attenuationColor"
+      ) {
+        out[k] = add(
+          toVec3(av as any),
+          toVec3(bv as any),
+        ) as unknown as NodeValue;
       } else {
-        out[k] = add(toFloat(av as any), toFloat(bv as any)) as unknown as NodeValue;
+        out[k] = add(
+          toFloat(av as any),
+          toFloat(bv as any),
+        ) as unknown as NodeValue;
       }
     }
     return out;
@@ -1576,11 +1691,16 @@ function resolveBSDF(bsdf: BSDFLike, depth = 0): BSDFParams {
 //     `useAnisotropy` from activating at value 0.
 // ---------------------------------------------------------------------------
 
-function isLiveNode(v: unknown): v is THREE.Node | TextureValue | Record<string, unknown> {
+function isLiveNode(
+  v: unknown,
+): v is THREE.Node | TextureValue | Record<string, unknown> {
   return (
     v instanceof THREE.Node ||
     isTextureValue(v) ||
-    (isNodeRecord(v) && Object.values(v).some((x) => x instanceof THREE.Node || isTextureValue(x)))
+    (isNodeRecord(v) &&
+      Object.values(v).some(
+        (x) => x instanceof THREE.Node || isTextureValue(x),
+      ))
   );
 }
 
@@ -1601,7 +1721,10 @@ function channelToFloat(v: unknown): any {
   return toFloat(v as any);
 }
 
-function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): void {
+function applyChannels(
+  mat: THREE.MeshPhysicalNodeMaterial,
+  ch: BSDFParams,
+): void {
   // ---- Base color ----------------------------------------------------------
   if (ch.baseColor != null) {
     if (isLiveNode(ch.baseColor)) {
@@ -1615,11 +1738,13 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
 
   // ---- Roughness / metallic ------------------------------------------------
   if (ch.roughness != null) {
-    if (isLiveNode(ch.roughness)) mat.roughnessNode = channelToFloat(ch.roughness);
+    if (isLiveNode(ch.roughness))
+      mat.roughnessNode = channelToFloat(ch.roughness);
     else mat.roughness = ch.roughness as number;
   }
   if (ch.metallic != null) {
-    if (isLiveNode(ch.metallic)) mat.metalnessNode = channelToFloat(ch.metallic);
+    if (isLiveNode(ch.metallic))
+      mat.metalnessNode = channelToFloat(ch.metallic);
     else mat.metalness = ch.metallic as number;
   }
 
@@ -1630,7 +1755,9 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
     const ecLive = ec != null && isLiveNode(ec);
     const esLive = es != null && isLiveNode(es);
     if (ecLive || esLive) {
-      mat.emissiveNode = channelToVec3(ec ?? [0, 0, 0]).mul(channelToFloat(es ?? 1));
+      mat.emissiveNode = channelToVec3(ec ?? [0, 0, 0]).mul(
+        channelToFloat(es ?? 1),
+      );
     } else {
       const c = (ec as number[]) ?? [0, 0, 0];
       mat.emissive.setRGB(c[0] ?? 0, c[1] ?? 0, c[2] ?? 0);
@@ -1664,7 +1791,9 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
     const v = ch[key];
     if (v == null) return;
     if (isLiveNode(v)) {
-      (mat as any)[nodeProp] = asVec2 ? vec2(channelToFloat(v), float(0)) : channelToFloat(v);
+      (mat as any)[nodeProp] = asVec2
+        ? vec2(channelToFloat(v), float(0))
+        : channelToFloat(v);
     } else if (typeof v === "number") {
       (mat as any)[prop] = v;
     }
@@ -1679,9 +1808,17 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
   scalar("specular", "specularIntensity", "specularIntensityNode");
   scalar("iridescence", "iridescence", "iridescenceNode");
   scalar("iridescenceIOR", "iridescenceIOR", "iridescenceIORNode");
-  scalar("iridescenceThickness", "iridescenceThickness", "iridescenceThicknessNode");
+  scalar(
+    "iridescenceThickness",
+    "iridescenceThickness",
+    "iridescenceThicknessNode",
+  );
   scalar("dispersion", "dispersion", "dispersionNode");
-  scalar("attenuationDistance", "attenuationDistance", "attenuationDistanceNode");
+  scalar(
+    "attenuationDistance",
+    "attenuationDistance",
+    "attenuationDistanceNode",
+  );
   scalar("anisotropic", "anisotropy", "anisotropyNode", true);
 
   // ---- Clearcoat normal -----------------------------------------------------
@@ -1695,7 +1832,8 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
     const baseLive = ch.baseColor != null && isLiveNode(ch.baseColor);
     const sheenLive = isLiveNode(ch.sheen);
     if (tintLive || baseLive || sheenLive) {
-      const tint = ch.sheenTint != null ? channelToFloat(ch.sheenTint) : float(0.5);
+      const tint =
+        ch.sheenTint != null ? channelToFloat(ch.sheenTint) : float(0.5);
       const tintColor =
         ch.baseColor != null
           ? mix(color(1, 1, 1), channelToVec3(ch.baseColor), tint)
@@ -1717,12 +1855,20 @@ function applyChannels(mat: THREE.MeshPhysicalNodeMaterial, ch: BSDFParams): voi
   }
 
   // ---- Specular colour = mix(white, baseColor, specularTint) ----------------
-  if (ch.specularTint != null && (ch.specularTint != null || ch.baseColor != null)) {
+  if (
+    ch.specularTint != null &&
+    (ch.specularTint != null || ch.baseColor != null)
+  ) {
     const tintLive = ch.specularTint != null && isLiveNode(ch.specularTint);
     const baseLive = ch.baseColor != null && isLiveNode(ch.baseColor);
     if (tintLive || baseLive) {
-      const tint = ch.specularTint != null ? channelToFloat(ch.specularTint) : float(0);
-      mat.specularColorNode = mix(color(1, 1, 1), channelToVec3(ch.baseColor ?? [1, 1, 1]), tint);
+      const tint =
+        ch.specularTint != null ? channelToFloat(ch.specularTint) : float(0);
+      mat.specularColorNode = mix(
+        color(1, 1, 1),
+        channelToVec3(ch.baseColor ?? [1, 1, 1]),
+        tint,
+      );
     } else {
       const tint = (ch.specularTint as number) ?? 0;
       const base = (ch.baseColor as number[]) ?? [1, 1, 1];
@@ -1756,7 +1902,8 @@ function setFlatProperties(
   mat.color.setRGB(p.color[0], p.color[1], p.color[2]);
   mat.roughness = p.roughness;
   mat.metalness = p.metalness;
-  if (p.emissiveIntensity > 0) mat.emissiveIntensity = 1.0 * p.emissiveIntensity;
+  if (p.emissiveIntensity > 0)
+    mat.emissiveIntensity = 1.0 * p.emissiveIntensity;
   mat.emissiveMap = p.emissiveMap;
   mat.map = p.map;
   mat.roughnessMap = p.roughnessMap;
@@ -1776,7 +1923,8 @@ function setFlatProperties(
   mat.clearcoat = p.clearcoat;
   mat.clearcoatRoughness = p.clearcoatRoughness;
   if (p.clearcoatMap) mat.clearcoatMap = p.clearcoatMap;
-  if (p.clearcoatRoughnessMap) mat.clearcoatRoughnessMap = p.clearcoatRoughnessMap;
+  if (p.clearcoatRoughnessMap)
+    mat.clearcoatRoughnessMap = p.clearcoatRoughnessMap;
   if (p.clearcoatNormalMap) mat.clearcoatNormalMap = p.clearcoatNormalMap;
   mat.sheen = p.sheen;
   mat.sheenRoughness = p.sheenRoughness;
@@ -1784,18 +1932,27 @@ function setFlatProperties(
   if (p.sheenColorMap) mat.sheenColorMap = p.sheenColorMap;
   if (p.sheenRoughnessMap) mat.sheenRoughnessMap = p.sheenRoughnessMap;
   mat.specularIntensity = p.specularIntensity;
-  mat.specularColor.setRGB(p.specularColor[0], p.specularColor[1], p.specularColor[2]);
+  mat.specularColor.setRGB(
+    p.specularColor[0],
+    p.specularColor[1],
+    p.specularColor[2],
+  );
   if (p.specularColorMap) mat.specularColorMap = p.specularColorMap;
   if (p.specularIntensityMap) mat.specularIntensityMap = p.specularIntensityMap;
   mat.iridescence = p.iridescence;
   if (p.iridescenceMap) mat.iridescenceMap = p.iridescenceMap;
   mat.iridescenceIOR = p.iridescenceIOR;
   mat.iridescenceThicknessRange = p.iridescenceThicknessRange;
-  if (p.iridescenceThicknessMap) mat.iridescenceThicknessMap = p.iridescenceThicknessMap;
+  if (p.iridescenceThicknessMap)
+    mat.iridescenceThicknessMap = p.iridescenceThicknessMap;
   mat.anisotropy = p.anisotropy;
   if (p.anisotropyMap) mat.anisotropyMap = p.anisotropyMap;
   mat.attenuationDistance = p.attenuationDistance;
-  mat.attenuationColor.setRGB(p.attenuationColor[0], p.attenuationColor[1], p.attenuationColor[2]);
+  mat.attenuationColor.setRGB(
+    p.attenuationColor[0],
+    p.attenuationColor[1],
+    p.attenuationColor[2],
+  );
 }
 
 export function buildTSLMaterial(
