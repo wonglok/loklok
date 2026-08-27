@@ -8,6 +8,8 @@ import {
   RadioIcon,
   SettingsIcon,
   ClockIcon,
+  MonitorIcon,
+  PulseIcon,
 } from "../../../components/Icons";
 import { assetCatalog } from "./assetCatalog";
 
@@ -35,6 +37,13 @@ const navSections: NavSection[] = [
     items: [
       { label: "Dashboard", icon: LayoutDashboardIcon, url: "" },
       { label: "Blender Receiver", icon: RadioIcon, url: "receiver" },
+    ],
+  },
+  {
+    label: "Canvas",
+    items: [
+      { label: "Realtime Canvas", icon: PulseIcon, url: "realtime" },
+      { label: "Production Canvas", icon: MonitorIcon, url: "production" },
     ],
   },
   {

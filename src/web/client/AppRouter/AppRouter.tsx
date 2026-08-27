@@ -9,6 +9,8 @@ import { Dashboard } from "../pages/ProjectAdminLayout/SubPage/Dashboard";
 import { AssetPage } from "../pages/ProjectAdminLayout/SubPage/AssetPage";
 import { SettingsPage } from "../pages/ProjectAdminLayout/SubPage/SettingsPage";
 import { BlenderReceiver } from "../pages/ProjectAdminLayout/SubPage/BloomGlowRender";
+import { RealtimeCanvas } from "../pages/ProjectAdminLayout/SubPage/RealtimeCanvas";
+import { ProductionCanvas } from "../pages/ProjectAdminLayout/SubPage/ProductionCanvas";
 
 export function AppRouter() {
   return (
@@ -61,6 +63,22 @@ export function AppRouter() {
           <DashUILayout>
             {/*  */}
             {<BlenderReceiver />}
+          </DashUILayout>
+        }
+      />
+      <Route
+        path="/projects/:projectID/realtime"
+        element={
+          <DashUILayout>
+            <RealtimeCanvas />
+          </DashUILayout>
+        }
+      />
+      <Route
+        path="/projects/:projectID/production"
+        element={
+          <DashUILayout>
+            <ProductionCanvas />
           </DashUILayout>
         }
       />
