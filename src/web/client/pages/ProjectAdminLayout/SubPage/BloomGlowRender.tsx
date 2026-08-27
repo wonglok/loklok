@@ -73,7 +73,7 @@ function BlenderReceivingCanvas() {
         className="text-xs flex items-center justify-center"
         style={{ height: "20px" }}
       >
-        Blender Canvas ⬇️
+        Development Canvas ⬇️
       </div>
       <div className="w-full" style={{ height: `calc(100% - 20px)` }}>
         <CanvasGPU>
