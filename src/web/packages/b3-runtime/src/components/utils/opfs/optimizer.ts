@@ -187,7 +187,7 @@ function computeScaledSize(
 function hashGeometry(
   vertices: Float32Array,
   indices: Uint32Array,
-  uvs?: Float32Array,
+  uvs?: Float64Array,
 ): string {
   // Bounding box
   let minX = Infinity,
@@ -241,7 +241,7 @@ const DRACO_WASM_URL = "/draco/";
 async function compressGeometryDraco(
   vertices: Float32Array,
   indices: Uint32Array,
-  uvs?: Float32Array,
+  uvs?: Float64Array,
 ): Promise<ArrayBuffer> {
   // Create the draco encoder WASM module
   const mod = await (draco3d as any).createEncoderModule({
@@ -262,14 +262,15 @@ async function compressGeometryDraco(
     vertices,
   );
 
-  // TEX_COORD
+  // TEX_COORD — Draco only accepts Float32Array (its internal precision is
+  // float32 anyway), so downcast the full-precision float64 UVs here.
   if (uvs) {
     meshBuilder.AddFloatAttributeToMesh(
       mesh,
       mod.TEX_COORD,
       uvs.length / 2,
       2,
-      uvs,
+      new Float32Array(uvs),
     );
   }
 
@@ -641,7 +642,7 @@ export class OpfsOptimiser {
 // ---------------------------------------------------------------------------
 
 /** Safe slice of a TypedArray's underlying buffer. */
-function sliceBuffer(arr: Float32Array | Uint32Array): ArrayBuffer {
+function sliceBuffer(arr: Float32Array | Float64Array | Uint32Array): ArrayBuffer {
   return arr.buffer.slice(
     arr.byteOffset,
     arr.byteOffset + arr.byteLength,

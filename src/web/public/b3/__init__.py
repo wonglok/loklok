@@ -308,12 +308,13 @@ def _get_image_bytes(img):
 def _pack_geometry(vertices, indices, uvs):
     """Pack geometry arrays into a single binary blob.
 
-    Layout: [float32 vertices][uint32 indices][float32 UVs (optional)]
-    Uses struct.pack for explicit 4-byte unsigned ints (indices)."""
+    Layout: [float32 vertices][uint32 indices][float64 UVs (optional)]
+    Uses struct.pack for explicit 4-byte unsigned ints (indices).
+    UVs are packed as float64 ('d') to keep Blender's original precision on the wire."""
     v_bytes = array.array('f', vertices).tobytes()
     # struct.pack guarantees 4-byte unsigned ints (unlike array('I') which is platform-dependent)
     i_bytes = struct.pack(f'<{len(indices)}I', *indices) if indices else b''
-    u_bytes = array.array('f', uvs).tobytes() if uvs else b''
+    u_bytes = array.array('d', uvs).tobytes() if uvs else b''
     return v_bytes + i_bytes + u_bytes
 
 
@@ -527,7 +528,9 @@ def get_scene_data():
             f"_nm{normal_map or 'none'}"
             f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
             f"_fl{'1' if flat_shading else '0'}"
-            f"_uv{uv_cksum}"
+            # "_uvd" marks float64 UVs — distinct from the old "_uv" (float32) so
+            # cached float32 geometry is invalidated and re-sent after an upgrade.
+            f"_uvd{uv_cksum}"
             f"_gh{graph_hash}"
         )
 

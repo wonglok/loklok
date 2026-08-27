@@ -3,7 +3,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import {
   OpfsBrowser,
-  ProductionViewer,
+  // ProductionViewer,
   Sidebar,
 } from "../../../../packages/b3-runtime/src";
 import { CameraSync } from "../../../../packages/b3-runtime/src/components/blender/CameraSync";

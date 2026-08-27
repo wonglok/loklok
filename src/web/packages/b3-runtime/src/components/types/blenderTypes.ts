@@ -40,7 +40,9 @@ export interface GeoBuffer {
   version: string;
   vertices: Float32Array;
   indices: Uint32Array;
-  uvs?: Float32Array;
+  /** Full-precision UVs (float64) from Blender. Downcast to Float32Array only
+   *  at the WebGL buffer-attribute boundary — see meshBuilder. */
+  uvs?: Float64Array;
 }
 
 export interface SceneData {

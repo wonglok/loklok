@@ -158,9 +158,10 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
   // Indices — use BufferAttribute to preserve uint32 precision
   geo.setIndex(new THREE.BufferAttribute(buf.indices, 1));
 
-  // UVs — already a Float32Array
+  // UVs — stored as full-precision float64; WebGL vertex attributes only
+  // support 32-bit floats, so downcast here at the GPU upload boundary.
   if (buf.uvs && buf.uvs.length > 0) {
-    geo.setAttribute("uv", new THREE.BufferAttribute(buf.uvs, 2));
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(buf.uvs), 2));
   }
 
   geo.computeVertexNormals();

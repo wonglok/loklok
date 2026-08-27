@@ -670,8 +670,9 @@ export function buildGeometryWithTSL(
   geo.setAttribute("position", new THREE.BufferAttribute(buf.vertices, 3));
   geo.setIndex(new THREE.BufferAttribute(buf.indices, 1));
 
+  // UVs are float64 in the GeoBuffer — downcast to float32 for the WebGL attribute
   if (buf.uvs && buf.uvs.length > 0) {
-    geo.setAttribute("uv", new THREE.BufferAttribute(buf.uvs, 2));
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(buf.uvs), 2));
   }
 
   geo.computeVertexNormals();

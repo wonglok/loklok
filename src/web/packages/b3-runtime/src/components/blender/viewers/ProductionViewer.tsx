@@ -275,7 +275,8 @@ async function loadProductionScene(
           version: "1",
           vertices: decoded.vertices,
           indices: decoded.indices,
-          uvs: decoded.uvs,
+          // Draco decodes to float32 — promote to float64 to match the GeoBuffer type
+          uvs: decoded.uvs ? new Float64Array(decoded.uvs) : undefined,
         });
         continue;
       }
@@ -288,8 +289,9 @@ async function loadProductionScene(
       if (vertsFile && idxsFile) {
         const verts = new Float32Array(await vertsFile.async("arraybuffer"));
         const idxs = new Uint32Array(await idxsFile.async("arraybuffer"));
+        // Raw fallback UVs are persisted at full float64 precision
         const uvs = uvsFile
-          ? new Float32Array(await uvsFile.async("arraybuffer"))
+          ? new Float64Array(await uvsFile.async("arraybuffer"))
           : undefined;
 
         geometryMap.set(entry.name, {

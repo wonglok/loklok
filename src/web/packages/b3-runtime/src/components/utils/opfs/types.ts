@@ -18,7 +18,7 @@
 //       <name>/
 //         vertices.bin           — Float32Array raw bytes
 //         indices.bin            — Uint32Array raw bytes
-//         uvs.bin                — Float32Array raw bytes (optional)
+//         uvs.bin                — Float64Array raw bytes (optional, full precision)
 //         config.json            — { version, vCount, iCount, hasUVs }
 //       manifest.json            — Array of { name }
 //     cameras.json               — CameraData[]

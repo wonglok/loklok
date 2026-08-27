@@ -246,9 +246,9 @@ async function buildDocument(): Promise<any | null> {
       norms.byteLength,
     );
     const idxBytes = new Uint8Array(idx.buffer, idx.byteOffset, idx.byteLength);
-    const uvBytes = uvs
-      ? new Uint8Array(uvs.buffer, uvs.byteOffset, uvs.byteLength)
-      : undefined;
+    // glTF accessors only support float32 (componentType 5126) — UVs are float64
+    // in the GeoBuffer, so downcast here for the GLB binary.
+    const uvBytes = uvs ? new Uint8Array(new Float32Array(uvs).buffer) : undefined;
 
     let minX = Infinity,
       minY = Infinity,

@@ -339,10 +339,11 @@ export class OpfsFS {
     const vertices = new Float32Array(vertsRaw);
     const indices = new Uint32Array(idxsRaw);
 
-    let uvs: Float32Array | undefined;
+    let uvs: Float64Array | undefined;
     if (config.hasUVs) {
       const uvsRaw = await readBinary(geoDir, "uvs.bin");
-      if (uvsRaw) uvs = new Float32Array(uvsRaw);
+      // UVs are persisted at full float64 precision (matches the Blender wire format)
+      if (uvsRaw) uvs = new Float64Array(uvsRaw);
     }
 
     return { version: config.version, vertices, indices, uvs };

@@ -106,7 +106,8 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           });
         } else if (pending.kind === "geo") {
           // Unpack binary blob with ZERO-COPY typed array views:
-          // [float32 vertices][uint32 indices][float32 UVs?]
+          // [float32 vertices][uint32 indices][float64 UVs?]
+          // UVs arrive as float64 to keep Blender's original precision.
           // Views keep the underlying ArrayBuffer alive — no data copy.
           const vBytes = pending.vCount * 3 * 4;
           const iBytes = pending.iCount * 4;
@@ -114,9 +115,9 @@ export const useBlenderSyncStore = create<BlenderSyncStore>((set, get) => ({
           const vertices = new Float32Array(event.data, 0, pending.vCount * 3);
           const indices = new Uint32Array(event.data, vBytes, pending.iCount);
 
-          let uvs: Float32Array | undefined;
+          let uvs: Float64Array | undefined;
           if (pending.hasUVs) {
-            uvs = new Float32Array(
+            uvs = new Float64Array(
               event.data,
               vBytes + iBytes,
               pending.vCount * 2,
