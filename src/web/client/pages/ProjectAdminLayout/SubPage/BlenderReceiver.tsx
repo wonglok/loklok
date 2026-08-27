@@ -26,9 +26,11 @@ export function BlenderReceiver() {
     <div className="relative w-full h-full">
       <div className="w-full h-full flex">
         <BlenderConnection></BlenderConnection>
-        <div className="w-full h-full flex">
+        <div className="w-full h-full relative">
           <BlenderReceivingCanvas></BlenderReceivingCanvas>
-          {/* <ProductionCanvas></ProductionCanvas> */}
+          <div className=" absolute bottom-0 right-0 w-[500px] aspect-video">
+            <ProductionCanvas></ProductionCanvas>
+          </div>
         </div>
         <Sidebar
           bottomRow={
