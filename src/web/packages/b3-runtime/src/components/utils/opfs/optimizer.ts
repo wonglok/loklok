@@ -370,9 +370,9 @@ export class OpfsOptimiser {
             blob,
             texData.mime,
             {
-              quality: 0.75,
-              maxHeight: 2048,
-              maxWidth: 2048,
+              quality: 0.4,
+              maxHeight: 1024,
+              maxWidth: 1024,
             },
           );
           const ext = mime.split("/")[1] ?? "avif";
