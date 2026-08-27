@@ -28,7 +28,7 @@ export function BlenderReceiver() {
         <BlenderConnection></BlenderConnection>
         <div className="w-full h-full flex">
           <BlenderReceivingCanvas></BlenderReceivingCanvas>
-          <ProductionCanvas></ProductionCanvas>
+          {/* <ProductionCanvas></ProductionCanvas> */}
         </div>
         <Sidebar
           bottomRow={
