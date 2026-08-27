@@ -95,7 +95,10 @@ export function LightFromData({
           color={color}
           width={light.width ?? 1}
           height={light.height ?? 1}
-          castShadow={light.castShadow ?? true}
+          // three.js RectAreaLight has no shadow support (r185) — it never
+          // initialises a `shadow` object, so enabling castShadow crashes the
+          // TSL light node (`light.shadow.shadowNode` on undefined).
+          castShadow={false}
         />
       );
 
