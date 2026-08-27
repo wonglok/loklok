@@ -144,9 +144,6 @@ export function SyncContent() {
           opacity: obj.opacity,
           alphaTest: obj.alphaTest,
           flatShading: obj.flatShading,
-          graph: obj.graph,
-          // Resolve TEX_IMAGE nodes by name from the live texture store.
-          resolveImage: (name, kind) => getOrCreateTexture(name, texData, kind),
         }) as any;
         _geoMaterialCache.set(cacheKey, geoMat as any);
       }

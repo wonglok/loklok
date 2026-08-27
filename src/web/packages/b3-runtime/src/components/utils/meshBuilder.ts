@@ -1,6 +1,5 @@
 import * as THREE from "three/webgpu";
 import type { TextureData, GeoBuffer } from "../types/blenderTypes";
-import { buildTSLMaterial, type ShaderGraph } from "./tslMaterialBuilder";
 
 // ---------------------------------------------------------------------------
 // Module-level caches (shared across Viewer and export utilities)
@@ -62,12 +61,6 @@ export interface BuildGeometryParams {
   opacity?: number;
   alphaTest?: number;
   flatShading?: boolean;
-  graph?: ShaderGraph;
-  /** Resolve a TEX_IMAGE node's image name → THREE.Texture (graph path). */
-  resolveImage?: (
-    name: string,
-    kind: "color" | "noncolor",
-  ) => THREE.Texture | null;
   // Physical material properties
   transmission?: number;
   transmissionMap?: THREE.Texture | null;
@@ -112,7 +105,6 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     color,
     roughness,
     metalness,
-    emissiveColor,
     emissiveIntensity,
     map,
     roughnessMap,
@@ -123,8 +115,6 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     opacity = 1.0,
     alphaTest = 0.0,
     flatShading = false,
-    graph,
-    resolveImage,
     // Physical properties
     transmission = 0,
     transmissionMap = null,
@@ -175,55 +165,70 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     geo.computeTangents();
   }
 
-  // Build material using the TSL shader graph pipeline
-  const mat = buildTSLMaterial({
-    geometry: geo,
-    graph,
-    color,
-    roughness,
-    metalness,
-    emissiveColor,
-    emissiveIntensity,
-    map,
-    roughnessMap,
-    metalnessMap,
-    normalMap,
-    emissiveMap: emissiveMap ?? null,
-    transparent,
-    opacity,
-    alphaTest,
-    flatShading,
-    resolveImage,
-    // Physical properties
-    transmission,
-    transmissionMap,
-    thickness,
-    thicknessMap,
-    ior,
-    clearcoat,
-    clearcoatRoughness,
-    clearcoatMap,
-    clearcoatRoughnessMap,
-    clearcoatNormalMap,
-    sheen,
-    sheenRoughness,
-    sheenColor,
-    sheenColorMap,
-    sheenRoughnessMap,
-    specularIntensity,
-    specularColor,
-    specularColorMap,
-    specularIntensityMap,
-    iridescence,
-    iridescenceMap,
-    iridescenceIOR,
-    iridescenceThicknessRange,
-    iridescenceThicknessMap,
-    anisotropy,
-    anisotropyMap,
-    attenuationDistance,
-    attenuationColor,
-  });
+  // Build a standard MeshPhysicalNodeMaterial directly. The TSL shader-graph
+  // pipeline is gone, so materials use the flat property set synced from
+  // Blender (colour, roughness, metalness, emissive + maps).
+  const mat = new THREE.MeshPhysicalNodeMaterial();
+
+  mat.color.setRGB(color[0], color[1], color[2]);
+  mat.roughness = roughness;
+  mat.metalness = metalness;
+  if (emissiveIntensity > 0) mat.emissiveIntensity = 1.0 * emissiveIntensity;
+  mat.emissiveMap = emissiveMap;
+  mat.map = map;
+  mat.roughnessMap = roughnessMap;
+  mat.metalnessMap = metalnessMap;
+  mat.normalMap = normalMap;
+  mat.transparent = transparent;
+  if (opacity < 1.0) mat.opacity = opacity;
+  if (alphaTest > 0) mat.alphaTest = alphaTest;
+  mat.flatShading = flatShading;
+
+  // Physical material properties (not transferred from Blender — defaults)
+  mat.transmission = transmission;
+  if (transmissionMap) mat.transmissionMap = transmissionMap;
+  mat.thickness = thickness;
+  if (thicknessMap) mat.thicknessMap = thicknessMap;
+  mat.ior = ior;
+  mat.clearcoat = clearcoat;
+  mat.clearcoatRoughness = clearcoatRoughness;
+  if (clearcoatMap) mat.clearcoatMap = clearcoatMap;
+  if (clearcoatRoughnessMap) mat.clearcoatRoughnessMap = clearcoatRoughnessMap;
+  if (clearcoatNormalMap) mat.clearcoatNormalMap = clearcoatNormalMap;
+  mat.sheen = sheen;
+  mat.sheenRoughness = sheenRoughness;
+  mat.sheenColor.setRGB(sheenColor[0], sheenColor[1], sheenColor[2]);
+  if (sheenColorMap) mat.sheenColorMap = sheenColorMap;
+  if (sheenRoughnessMap) mat.sheenRoughnessMap = sheenRoughnessMap;
+  mat.specularIntensity = specularIntensity;
+  mat.specularColor.setRGB(
+    specularColor[0],
+    specularColor[1],
+    specularColor[2],
+  );
+  if (specularColorMap) mat.specularColorMap = specularColorMap;
+  if (specularIntensityMap) mat.specularIntensityMap = specularIntensityMap;
+  mat.iridescence = iridescence;
+  if (iridescenceMap) mat.iridescenceMap = iridescenceMap;
+  mat.iridescenceIOR = iridescenceIOR;
+  mat.iridescenceThicknessRange = iridescenceThicknessRange;
+  if (iridescenceThicknessMap)
+    mat.iridescenceThicknessMap = iridescenceThicknessMap;
+  mat.anisotropy = anisotropy;
+  if (anisotropyMap) mat.anisotropyMap = anisotropyMap;
+  mat.attenuationDistance = attenuationDistance;
+  mat.attenuationColor.setRGB(
+    attenuationColor[0],
+    attenuationColor[1],
+    attenuationColor[2],
+  );
+
+  // When a base color texture is present, set color to white so the texture
+  // shows through un-darkened (Blender colour-picker is ignored when an Image
+  // Texture is connected to Base Color).
+  if (map) {
+    mat.color.setRGB(1, 1, 1);
+  }
 
   return { geometry: geo, material: mat };
 }

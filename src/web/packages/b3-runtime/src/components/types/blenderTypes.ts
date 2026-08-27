@@ -1,5 +1,3 @@
-import type { ShaderGraph } from "../utils/tslMaterialBuilder";
-
 // ---------------------------------------------------------------------------
 // Shared types for the Blender ↔ Three.js sync pipeline.
 // Moved here from useBlenderSync.ts so both the Zustand stores and consumers
@@ -29,8 +27,6 @@ export interface BlenderObject {
   alphaTest?: number;
   /** True when all mesh faces are flat-shaded (Blender "Shade Flat"). */
   flatShading?: boolean;
-  /** Serialised Blender shader node graph for TSL material reconstruction. */
-  graph?: ShaderGraph;
   /** Geometry version — matched against GeoBuffer.version for cache invalidation. */
   version: string;
 }

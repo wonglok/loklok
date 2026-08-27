@@ -320,7 +320,6 @@ async function loadProductionScene(
 // ---------------------------------------------------------------------------
 
 export function SceneContent({ scene }: { scene: ProductionScene }) {
-  const gl = useThree((s) => s.gl);
   const threeScene = useThree((s) => s.scene);
 
   // Sync meshes via the shared hook — handles caching, InstancedMesh
@@ -355,9 +354,9 @@ export function SceneContent({ scene }: { scene: ProductionScene }) {
       const geoBuf = scene.geometryMap.get(geoName);
       if (!geoBuf) return null;
 
-      // Same builder as SyncViewer — a MeshPhysicalNodeMaterial carrying
-      // emissive, the Blender TSL shader graph and the physical properties,
-      // so both viewers shade identically under the shared HDRI.
+      // Same builder as SyncViewer — a MeshPhysicalNodeMaterial carrying the
+      // flat material properties, so both viewers shade identically under the
+      // shared HDRI.
       return buildGeometryFromBuffer({
         buf: geoBuf,
         color: obj.color,
@@ -374,9 +373,6 @@ export function SceneContent({ scene }: { scene: ProductionScene }) {
         opacity: obj.opacity,
         alphaTest: obj.alphaTest,
         flatShading: obj.flatShading,
-        graph: obj.graph,
-        // Resolve TEX_IMAGE nodes by name from the zip's texture data.
-        resolveImage: (name, kind) => resolveTexture(scene, name, kind),
       });
     },
   });
