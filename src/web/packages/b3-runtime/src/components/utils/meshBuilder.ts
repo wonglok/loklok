@@ -161,7 +161,10 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
   // UVs — stored as full-precision float64; WebGL vertex attributes only
   // support 32-bit floats, so downcast here at the GPU upload boundary.
   if (buf.uvs && buf.uvs.length > 0) {
-    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(buf.uvs), 2));
+    geo.setAttribute(
+      "uv",
+      new THREE.BufferAttribute(new Float32Array(buf.uvs), 2),
+    );
   }
 
   geo.computeVertexNormals();
