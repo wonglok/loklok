@@ -24,11 +24,24 @@ export function getOrCreateTexture(
   kind: TexKind,
 ): THREE.Texture | null {
   const cacheKey = `${name}:${kind}`;
-  const existing = _textureCache.get(cacheKey);
-  if (existing) return existing;
-
   const texEntry = texData.get(name);
   if (!texEntry) return null;
+
+  // Recreate when the image bytes change (e.g. re-edited in Blender) so the
+  // viewer picks up the new pixels instead of the stale cached texture.
+  const existing = _textureCache.get(cacheKey);
+  if (
+    existing &&
+    (existing.userData.byteLen !== texEntry.bytes.byteLength ||
+      existing.userData.mime !== texEntry.mime)
+  ) {
+    existing.dispose();
+    if (existing.userData.url) URL.revokeObjectURL(existing.userData.url);
+    _textureCache.delete(cacheKey);
+  }
+
+  const cached = _textureCache.get(cacheKey);
+  if (cached) return cached;
 
   // Create a Blob URL from the encoded image bytes so the browser's native
   // PNG / JPEG / WebP decoder handles the sRGB → linear conversion correctly.
@@ -41,6 +54,12 @@ export function getOrCreateTexture(
   texture.flipY = true;
   texture.colorSpace =
     kind === "color" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+
+  // Track the source bytes so a later edit with the same image name can be
+  // detected and the cache invalidated (see above).
+  texture.userData.byteLen = texEntry.bytes.byteLength;
+  texture.userData.mime = texEntry.mime;
+  texture.userData.url = url;
 
   _textureCache.set(cacheKey, texture);
   return texture;

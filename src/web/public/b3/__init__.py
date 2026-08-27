@@ -302,6 +302,22 @@ def _extract_node_graph(mat):
                     except Exception:
                         pass
 
+            # --- TEX_IMAGE / TEX_ENVIRONMENT — expose the image name as an
+            # "image" input socket. Blender stores the image on the node
+            # *property* (`node.image`), not a socket, so without this the web
+            # graph evaluator (tex-image / tex-environment builders call
+            # `getInput("image")`) can't resolve the texture and renders black.
+            if node.type in ('TEX_IMAGE', 'TEX_ENVIRONMENT'):
+                img = getattr(node, 'image', None)
+                if img is not None and not any(
+                    s.get('name') == 'image' for s in entry['inputs']
+                ):
+                    entry['inputs'].append({
+                        'name': 'image',
+                        'display': 'image',
+                        'value': img.name,
+                    })
+
             nodes.append(entry)
         except Exception:
             # Skip nodes that can't be serialised
