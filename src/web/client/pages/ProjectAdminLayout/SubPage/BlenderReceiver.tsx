@@ -14,8 +14,8 @@ import {
   SyncViewer,
 } from "../../../../packages/b3-runtime/src/components/blender/viewers/SyncViewer";
 import { opfs } from "../../../../packages/b3-runtime/src/components/utils/opfs";
-import { SSGIRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/SSGIRender";
 import { ProductionScene } from "../../../../packages/b3-runtime/src/components/blender/viewers/ProductionViewer";
+import { BloomRender } from "../../../../packages/b3-runtime/src/components/blender/canvas-units/BloomRender";
 
 export function BlenderReceiver() {
   // Bumped by every snapshot — re-reads the OPFS tree so the space freed by
@@ -77,14 +77,14 @@ function BlenderReceivingCanvas() {
         <CanvasGPU>
           <SyncViewer />
           <CameraSync />
-          <SSGIRender
-            params={{
-              sliceCount: 2,
-              stepCount: 8,
-              giIntensity: 15,
-              radius: 50,
-              backfaceLighting: 1,
-            }}
+          <BloomRender
+          // params={{
+          //   sliceCount: 2,
+          //   stepCount: 8,
+          //   giIntensity: 15,
+          //   radius: 50,
+          //   backfaceLighting: 1,
+          // }}
           />
         </CanvasGPU>
       </div>
@@ -187,14 +187,14 @@ function OutputPreview({ children }: { children?: ReactNode }) {
             <ProductionScene key={id} zipBuffer={zipBuffer}></ProductionScene>
           )}
 
-          <SSGIRender
-            params={{
-              sliceCount: 2,
-              stepCount: 8,
-              giIntensity: 15,
-              radius: 50,
-              backfaceLighting: 1,
-            }}
+          <BloomRender
+          // params={{
+          //   sliceCount: 2,
+          //   stepCount: 8,
+          //   giIntensity: 15,
+          //   radius: 50,
+          //   backfaceLighting: 1,
+          // }}
           />
           {children}
         </CanvasGPU>
