@@ -41,6 +41,21 @@ export interface ResolvedTextures {
   metalnessMap: THREE.Texture | null;
   normalMap: THREE.Texture | null;
   emissiveMap: THREE.Texture | null;
+  // Physical channel maps
+  clearcoatMap?: THREE.Texture | null;
+  clearcoatRoughnessMap?: THREE.Texture | null;
+  clearcoatNormalMap?: THREE.Texture | null;
+  sheenColorMap?: THREE.Texture | null;
+  sheenRoughnessMap?: THREE.Texture | null;
+  iridescenceMap?: THREE.Texture | null;
+  iridescenceThicknessMap?: THREE.Texture | null;
+  anisotropyMap?: THREE.Texture | null;
+  transmissionMap?: THREE.Texture | null;
+  thicknessMap?: THREE.Texture | null;
+  specularColorMap?: THREE.Texture | null;
+  specularIntensityMap?: THREE.Texture | null;
+  /** Textures resolved for the graph's TEX_IMAGE / TEX_ENVIRONMENT nodes. */
+  graphTextures?: Map<string, THREE.Texture>;
 }
 
 /** Result of building geometry + material for a group of identical objects. */

@@ -1,5 +1,7 @@
 import * as THREE from "three/webgpu";
 import type { TextureData, GeoBuffer } from "../types/blenderTypes";
+import type { ShaderGraph } from "../types/shaderGraph";
+import { buildTSLMaterial } from "./tslGraphBuilder";
 
 // ---------------------------------------------------------------------------
 // Module-level caches (shared across Viewer and export utilities)
@@ -47,6 +49,10 @@ export function getOrCreateTexture(
 /** Parameters for {@link buildGeometryFromBuffer}. */
 export interface BuildGeometryParams {
   buf: GeoBuffer;
+  /** Serialised Blender shader node graph — when present, drives the material. */
+  graph?: ShaderGraph;
+  /** Resolve a graph TEX_IMAGE name → THREE.Texture (colour space from node). */
+  resolveImage?: (name: string, kind: TexKind) => THREE.Texture | null;
   color: [number, number, number];
   roughness: number;
   metalness: number;
@@ -102,9 +108,12 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
 } {
   const {
     buf,
+    graph,
+    resolveImage,
     color,
     roughness,
     metalness,
+    emissiveColor,
     emissiveIntensity,
     map,
     roughnessMap,
@@ -165,70 +174,56 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
     geo.computeTangents();
   }
 
-  // Build a standard MeshPhysicalNodeMaterial directly. The TSL shader-graph
-  // pipeline is gone, so materials use the flat property set synced from
-  // Blender (colour, roughness, metalness, emissive + maps).
-  const mat = new THREE.MeshPhysicalNodeMaterial();
-
-  mat.color.setRGB(color[0], color[1], color[2]);
-  mat.roughness = roughness;
-  mat.metalness = metalness;
-  if (emissiveIntensity > 0) mat.emissiveIntensity = 1.0 * emissiveIntensity;
-  mat.emissiveMap = emissiveMap;
-  mat.map = map;
-  mat.roughnessMap = roughnessMap;
-  mat.metalnessMap = metalnessMap;
-  mat.normalMap = normalMap;
-  mat.transparent = transparent;
-  if (opacity < 1.0) mat.opacity = opacity;
-  if (alphaTest > 0) mat.alphaTest = alphaTest;
-  mat.flatShading = flatShading;
-
-  // Physical material properties (not transferred from Blender — defaults)
-  mat.transmission = transmission;
-  if (transmissionMap) mat.transmissionMap = transmissionMap;
-  mat.thickness = thickness;
-  if (thicknessMap) mat.thicknessMap = thicknessMap;
-  mat.ior = ior;
-  mat.clearcoat = clearcoat;
-  mat.clearcoatRoughness = clearcoatRoughness;
-  if (clearcoatMap) mat.clearcoatMap = clearcoatMap;
-  if (clearcoatRoughnessMap) mat.clearcoatRoughnessMap = clearcoatRoughnessMap;
-  if (clearcoatNormalMap) mat.clearcoatNormalMap = clearcoatNormalMap;
-  mat.sheen = sheen;
-  mat.sheenRoughness = sheenRoughness;
-  mat.sheenColor.setRGB(sheenColor[0], sheenColor[1], sheenColor[2]);
-  if (sheenColorMap) mat.sheenColorMap = sheenColorMap;
-  if (sheenRoughnessMap) mat.sheenRoughnessMap = sheenRoughnessMap;
-  mat.specularIntensity = specularIntensity;
-  mat.specularColor.setRGB(
-    specularColor[0],
-    specularColor[1],
-    specularColor[2],
-  );
-  if (specularColorMap) mat.specularColorMap = specularColorMap;
-  if (specularIntensityMap) mat.specularIntensityMap = specularIntensityMap;
-  mat.iridescence = iridescence;
-  if (iridescenceMap) mat.iridescenceMap = iridescenceMap;
-  mat.iridescenceIOR = iridescenceIOR;
-  mat.iridescenceThicknessRange = iridescenceThicknessRange;
-  if (iridescenceThicknessMap)
-    mat.iridescenceThicknessMap = iridescenceThicknessMap;
-  mat.anisotropy = anisotropy;
-  if (anisotropyMap) mat.anisotropyMap = anisotropyMap;
-  mat.attenuationDistance = attenuationDistance;
-  mat.attenuationColor.setRGB(
-    attenuationColor[0],
-    attenuationColor[1],
-    attenuationColor[2],
-  );
-
-  // When a base color texture is present, set color to white so the texture
-  // shows through un-darkened (Blender colour-picker is ignored when an Image
-  // Texture is connected to Base Color).
-  if (map) {
-    mat.color.setRGB(1, 1, 1);
-  }
+  // Build the material — TSL-first via the shader-graph evaluator when a graph
+  // is present; otherwise the flat classic-property path.
+  const mat = buildTSLMaterial({
+    geometry: geo,
+    graph,
+    resolveImage,
+    color,
+    roughness,
+    metalness,
+    emissiveColor,
+    emissiveIntensity,
+    map,
+    roughnessMap,
+    metalnessMap,
+    normalMap,
+    emissiveMap: emissiveMap ?? null,
+    transparent,
+    opacity,
+    alphaTest,
+    flatShading,
+    // Physical properties
+    transmission,
+    transmissionMap,
+    thickness,
+    thicknessMap,
+    ior,
+    clearcoat,
+    clearcoatRoughness,
+    clearcoatMap,
+    clearcoatRoughnessMap,
+    clearcoatNormalMap,
+    sheen,
+    sheenRoughness,
+    sheenColor,
+    sheenColorMap,
+    sheenRoughnessMap,
+    specularIntensity,
+    specularColor,
+    specularColorMap,
+    specularIntensityMap,
+    iridescence,
+    iridescenceMap,
+    iridescenceIOR,
+    iridescenceThicknessRange,
+    iridescenceThicknessMap,
+    anisotropy,
+    anisotropyMap,
+    attenuationDistance,
+    attenuationColor,
+  });
 
   return { geometry: geo, material: mat };
 }
@@ -238,18 +233,17 @@ export function buildGeometryFromBuffer(params: BuildGeometryParams): {
 // ---------------------------------------------------------------------------
 
 /** Build a cache key that uniquely identifies a geometry+material combination.
- *  Objects sharing the same key can be batched into a single InstancedMesh. */
+ *  Objects sharing the same key can be batched into a single InstancedMesh.
+ *  `objVersion` embeds the Blender graph hash, so graph edits invalidate it;
+ *  every resolved texture uuid (classic + physical maps) is also hashed. */
 export function computeMeshCacheKey(
   objName: string,
   objVersion: string,
   geoVersion: string | undefined,
-  map: THREE.Texture | null,
-  roughnessMap: THREE.Texture | null,
-  metalnessMap: THREE.Texture | null,
-  normalMap: THREE.Texture | null,
-  emissiveMap: THREE.Texture | null,
+  textures: Array<THREE.Texture | null | undefined>,
 ): string {
-  return `${objName}@${objVersion}@${map?.uuid ?? "n"}@${metalnessMap?.uuid ?? "n"}@${normalMap?.uuid ?? "n"}@${roughnessMap?.uuid ?? "n"}@${emissiveMap?.uuid ?? "n"}@${geoVersion ?? "n"}`;
+  const texPart = textures.map((t) => t?.uuid ?? "n").join("@");
+  return `${objName}@${objVersion}@${texPart}@${geoVersion ?? "n"}`;
 }
 
 /** A managed InstancedMesh group — one draw call for N objects sharing the same geometry+material. */

@@ -38,6 +38,7 @@ import asyncio
 import threading
 import sys
 import subprocess
+import re
 
 # ---------------------------------------------------------------------------
 # Auto-install websockets in Blender's bundled Python
@@ -102,6 +103,211 @@ def _redraw_all():
                 area.tag_redraw()
     except (AttributeError, TypeError):
         pass  # restricted context — no redraw needed at registration time
+
+
+# ---------------------------------------------------------------------------
+# Shader node-graph extraction
+# ---------------------------------------------------------------------------
+
+def _slugify(name):
+    """Normalize a Blender identifier into a portable slug.
+
+    Lowercase, replace runs of non-alphanumeric chars with a single hyphen,
+    strip leading / trailing hyphens.  Examples:
+      'Base Color'      → 'base-color'
+      'BSDF_PRINCIPLED' → 'bsdf-principled'
+      'Emission Color'  → 'emission-color'
+    """
+    slug = re.sub(r'[^a-zA-Z0-9]+', '-', str(name)).strip('-').lower()
+    return slug
+
+
+def _serialise_socket_value(entry, val):
+    """Store a socket's default value into `entry` (best-effort)."""
+    try:
+        # Handle Image data-blocks (TEX_IMAGE node "Image" socket)
+        if hasattr(val, 'name') and hasattr(val, 'size'):
+            # bpy.types.Image — store just the name
+            entry["value"] = val.name
+        elif hasattr(val, '__iter__') and not isinstance(val, str):
+            entry["value"] = [round(float(v), 7) for v in val]
+        elif hasattr(val, '__len__') and not isinstance(val, str):
+            entry["value"] = list(val)
+        else:
+            try:
+                entry["value"] = round(float(val), 7) if isinstance(val, (int, float)) else str(val)
+            except (ValueError, TypeError):
+                entry["value"] = str(val)
+    except Exception:
+        pass
+
+
+# Property identifiers that are UI-only or internal — never serialised.
+_NODE_PROP_SKIP = {
+    'inputs', 'outputs', 'internal_links', 'name', 'label', 'bl_idname', 'type',
+    'location', 'width', 'height', 'dimensions', 'hidden', 'mute', 'select',
+    'show_options', 'show_preview', 'show_texture', 'show_sidebar', 'color',
+    'use_custom_color', 'parent', 'socket_value_update', 'show_expanded',
+    'input_vertex_attribute_name', 'output_vertex_attribute_name', 'draw_buttons',
+    'rna_type', 'interface', 'preview', 'tree_type',
+}
+
+
+def _extract_node_props(node):
+    """Serialise the node's simple properties (enums, scalars, small vectors).
+
+    Catches operation enums (MATH), blend types (MIX_RGB), noise dimensions,
+    gradient types, etc. Socket values are handled separately, so any property
+    whose name collides with a socket identifier is skipped."""
+    props = {}
+    socket_names = set()
+    for sock in list(node.inputs) + list(node.outputs):
+        socket_names.add(sock.identifier)
+        socket_names.add(sock.name)
+    try:
+        for prop in node.rna_type.properties:
+            ident = prop.identifier
+            if ident in _NODE_PROP_SKIP or ident in socket_names:
+                continue
+            if prop.type == 'ENUM':
+                try:
+                    props[ident] = getattr(node, ident)
+                except Exception:
+                    pass
+            elif prop.type in ('BOOLEAN', 'INTEGER', 'FLOAT'):
+                try:
+                    v = getattr(node, ident)
+                    if isinstance(v, bool) or isinstance(v, (int, float)):
+                        props[ident] = v
+                except Exception:
+                    pass
+            elif prop.type == 'COLOR':
+                try:
+                    c = getattr(node, ident)
+                    props[ident] = [round(c.r, 7), round(c.g, 7), round(c.b, 7)]
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return props
+
+
+def _extract_curve_data(node):
+    """Serialise a CurveMapping (CURVE_RGB / CURVE_VEC / CURVE_FLOAT)."""
+    mapping = getattr(node, 'mapping', None)
+    if not mapping:
+        return None
+    curves = []
+    for curve in mapping.curves:
+        pts = []
+        for p in curve.points:
+            pts.append([round(p.location[0], 7), round(p.location[1], 7)])
+        curves.append(pts)
+    return {
+        "extend": getattr(mapping, 'extend', 'HORIZONTAL'),
+        "curves": curves,
+        "tmin": getattr(mapping, 'tmin', 0.0),
+        "tmax": getattr(mapping, 'tmax', 1.0),
+        "xmin": getattr(mapping, 'xmin', 0.0),
+        "xmax": getattr(mapping, 'xmax', 1.0),
+        "ymin": getattr(mapping, 'ymin', 0.0),
+        "ymax": getattr(mapping, 'ymax', 1.0),
+    }
+
+
+def _extract_node_graph(mat):
+    """Walk the material's shader node tree and serialise it.
+
+    Returns a list of dicts — one per node — with:
+      - id        : unique node identifier (name)
+      - type      : slugified node type (bsdf-principled, tex-image, …)
+      - label     : human-readable label (Blender node label or name)
+      - inputs    : list of {name (slug), value?, fromNode?, fromSocket? (slug)}
+      - outputs   : list of {name (slug), value?} — output socket defaults
+      - props     : node config (operations, blend types, dimensions, …)
+      - colorRamp / curveData / colorspace : node-specific data
+
+    All identifiers are slugified so the web side can use them as-is."""
+    if not mat or not mat.use_nodes:
+        return None
+
+    nodes = []
+    for node in mat.node_tree.nodes:
+        try:
+            inputs = []
+            for sock in node.inputs:
+                # Use the socket identifier — duplicate display names (e.g. the
+                # two "Shader" inputs on a Mix Shader) get unique _001 suffixes.
+                entry = {"name": _slugify(sock.identifier)}
+                # Also expose the display name slug — the web side matches either.
+                entry["display"] = _slugify(sock.name)
+                if sock.is_linked:
+                    for link in sock.links:
+                        entry["fromNode"] = _slugify(link.from_node.name)
+                        entry["fromSocket"] = _slugify(link.from_socket.identifier)
+                        break  # only first link
+                else:
+                    _serialise_socket_value(entry, sock.default_value)
+                inputs.append(entry)
+
+            outputs = []
+            for sock in node.outputs:
+                entry = {"name": _slugify(sock.identifier)}
+                _serialise_socket_value(entry, sock.default_value)
+                outputs.append(entry)
+
+            entry = {
+                "id":    _slugify(node.name),
+                "type":  _slugify(node.type),
+                "label": getattr(node, "label", "") or node.name,
+                "inputs": inputs,
+                "outputs": outputs,
+            }
+
+            props = _extract_node_props(node)
+            if props:
+                entry["props"] = props
+
+            # --- Color Ramp (valtorgb) — extract stops for TSL gradient sampling ---
+            if node.type == 'VALTORGB' and hasattr(node, 'color_ramp'):
+                ramp = node.color_ramp
+                stops = []
+                for el in ramp.elements:
+                    c = el.color
+                    clen = len(c) if hasattr(c, '__len__') else 3
+                    stops.append({
+                        "position": round(el.position, 7),
+                        "color": [
+                            round(c[0], 7),
+                            round(c[1], 7),
+                            round(c[2], 7),
+                            round(c[3], 7) if clen >= 4 else 1.0,
+                        ],
+                    })
+                interpolation = getattr(ramp, 'interpolation', 'LINEAR')
+                entry["colorRamp"] = {"interpolation": interpolation, "stops": stops}
+
+            # --- Curve mappings (curve-rgb / curve-vec / curve-float) ---
+            if node.type in ('CURVE_RGB', 'CURVE_VEC', 'CURVE_FLOAT'):
+                cd = _extract_curve_data(node)
+                if cd:
+                    entry["curveData"] = cd
+
+            # --- Image color space (tex-image) — drives sRGB vs linear sampling ---
+            if node.type == 'TEX_IMAGE':
+                img = getattr(node, 'image', None)
+                if img:
+                    try:
+                        entry["colorspace"] = img.colorspace_settings.name
+                    except Exception:
+                        pass
+
+            nodes.append(entry)
+        except Exception:
+            # Skip nodes that can't be serialised
+            continue
+
+    return nodes if nodes else None
 
 
 def _find_image_texture(socket):
@@ -221,6 +427,22 @@ def _pack_geometry(vertices, indices, uvs):
     return v_bytes + i_bytes + u_bytes
 
 
+def _bsdf_scalar(node, name, default):
+    """Read an unlinked Principled BSDF scalar input's default value."""
+    sock = node.inputs.get(name)
+    if sock is None or sock.is_linked:
+        return default
+    try:
+        v = sock.default_value
+        if isinstance(v, (int, float)):
+            return float(v)
+        if hasattr(v, '__iter__') and not isinstance(v, str):
+            return float(v[0])
+    except (ValueError, TypeError):
+        pass
+    return default
+
+
 # ---------------------------------------------------------------------------
 # Scene data extraction (Blender Z-up → Three.js Y-up)
 # ---------------------------------------------------------------------------
@@ -335,6 +557,38 @@ def get_scene_data():
         transparent = False
         alpha_test = 0.0
 
+        # --- Principled BSDF physical channels ---
+        clearcoat = 0.0
+        clearcoat_roughness = 0.03
+        clearcoat_map = None
+        clearcoat_roughness_map = None
+        clearcoat_normal_map = None
+        sheen = 0.0
+        sheen_roughness = 0.5
+        sheen_tint = 0.5
+        sheen_color_map = None
+        sheen_roughness_map = None
+        iridescence = 0.0
+        iridescence_ior = 1.3
+        iridescence_thickness_min = 100.0
+        iridescence_thickness_max = 400.0
+        iridescence_map = None
+        iridescence_thickness_map = None
+        anisotropy = 0.0
+        anisotropy_map = None
+        transmission = 0.0
+        transmission_map = None
+        thickness = 0.0
+        thickness_map = None
+        ior = 1.45
+        specular_ior = 0.5
+        specular_tint = 0.0
+        specular_color_map = None
+        specular_ior_map = None
+        attenuation_distance = 0.0
+        attenuation_color = [1.0, 1.0, 1.0]
+        normal_scale = 1.0
+
         mat = obj.active_material
         if mat and mat.use_nodes:
             for node in mat.node_tree.nodes:
@@ -378,6 +632,71 @@ def get_scene_data():
                     alpha = node.inputs.get('Alpha')
                     if alpha and not alpha.is_linked:
                         opacity = alpha.default_value
+
+                    # --- Physical channels (Principled BSDF) ---
+                    clearcoat = _bsdf_scalar(node, 'Clearcoat', 0.0)
+                    clearcoat_roughness = _bsdf_scalar(node, 'Clearcoat Roughness', 0.03)
+                    sheen = _bsdf_scalar(node, 'Sheen', 0.0)
+                    sheen_roughness = _bsdf_scalar(node, 'Sheen Roughness', 0.5)
+                    sheen_tint = _bsdf_scalar(node, 'Sheen Tint', 0.5)
+                    iridescence = _bsdf_scalar(node, 'Iridescence', 0.0)
+                    iridescence_ior = _bsdf_scalar(node, 'Iridescence IOR', 1.3)
+                    anisotropy = _bsdf_scalar(node, 'Anisotropic', 0.0)
+                    transmission = _bsdf_scalar(node, 'Transmission', 0.0)
+                    thickness = _bsdf_scalar(node, 'Thickness', 0.0)
+                    ior = _bsdf_scalar(node, 'IOR', 1.45)
+                    specular_ior = _bsdf_scalar(node, 'Specular IOR Level', 0.5)
+                    specular_tint = _bsdf_scalar(node, 'Specular Tint', 0.0)
+                    attenuation_distance = _bsdf_scalar(node, 'Attenuation Distance', 0.0)
+
+                    # Iridescence thickness is a [min, max] range in newer BSDFs.
+                    it_in = node.inputs.get('Iridescence Thickness')
+                    if it_in and not it_in.is_linked:
+                        try:
+                            dv = it_in.default_value
+                            if hasattr(dv, '__iter__') and len(dv) >= 2:
+                                iridescence_thickness_min = float(dv[0])
+                                iridescence_thickness_max = float(dv[1])
+                            else:
+                                iridescence_thickness_max = float(dv)
+                        except (ValueError, TypeError):
+                            pass
+
+                    # Physical channel maps (resolve Image Texture upstream).
+                    _cm = _find_image_texture(node.inputs.get('Clearcoat'))
+                    clearcoat_map = _cm.name if _cm else None
+                    _crm = _find_image_texture(node.inputs.get('Clearcoat Roughness'))
+                    clearcoat_roughness_map = _crm.name if _crm else None
+                    _cnm = _find_image_texture(node.inputs.get('Clearcoat Normal'))
+                    clearcoat_normal_map = _cnm.name if _cnm else None
+                    _shm = _find_image_texture(node.inputs.get('Sheen'))
+                    sheen_color_map = _shm.name if _shm else None
+                    _srm = _find_image_texture(node.inputs.get('Sheen Roughness'))
+                    sheen_roughness_map = _srm.name if _srm else None
+                    _im = _find_image_texture(node.inputs.get('Iridescence'))
+                    iridescence_map = _im.name if _im else None
+                    _am = _find_image_texture(node.inputs.get('Anisotropic'))
+                    anisotropy_map = _am.name if _am else None
+                    _tm = _find_image_texture(node.inputs.get('Transmission'))
+                    transmission_map = _tm.name if _tm else None
+                    _thm = _find_image_texture(node.inputs.get('Thickness'))
+                    thickness_map = _thm.name if _thm else None
+                    _sm = _find_image_texture(node.inputs.get('Specular IOR Level'))
+                    specular_ior_map = _sm.name if _sm else None
+                    _sctm = _find_image_texture(node.inputs.get('Specular Tint'))
+                    specular_color_map = _sctm.name if _sctm else None
+
+                    # Normal scale from an upstream NORMAL_MAP node strength.
+                    nm_sock = node.inputs.get('Normal')
+                    if nm_sock and nm_sock.is_linked:
+                        for link in nm_sock.links:
+                            src = link.from_node
+                            if src.type == 'NORMAL_MAP':
+                                try:
+                                    normal_scale = float(src.inputs['Strength'].default_value)
+                                except (KeyError, ValueError, TypeError):
+                                    pass
+                                break
                     break
 
             # Blend mode (on the material, not the shader node)
@@ -403,6 +722,19 @@ def get_scene_data():
             elif blend_method == 'CLIP':
                 alpha_test = getattr(mat, 'alpha_threshold', 0.5)
 
+        # --- Shader node graph (drives the TSL material on the client) ---
+        graph = None
+        graph_hash = "0"
+        try:
+            graph = _extract_node_graph(obj.active_material)
+            if graph:
+                import hashlib
+                graph_json = json.dumps(graph, sort_keys=True)
+                graph_hash = hashlib.md5(graph_json.encode()).hexdigest()[:8]
+        except Exception:
+            graph = None
+            pass
+
         # Version tag — changes when geometry, material, or textures change
         uv_cksum = 0
         if uvs:
@@ -417,9 +749,14 @@ def get_scene_data():
             f"_rm{roughness_map or 'none'}"
             f"_mm{metalness_map or 'none'}"
             f"_nm{normal_map or 'none'}"
+            f"_cc{clearcoat:.3f}_cr{clearcoat_roughness:.3f}"
+            f"_sh{sheen:.3f}_sr{sheen_roughness:.3f}"
+            f"_ir{iridescence:.3f}_an{anisotropy:.3f}"
+            f"_tr{transmission:.3f}_io{ior:.3f}"
             f"_op{opacity:.4f}_t{'1' if transparent else '0'}_at{alpha_test:.4f}"
             f"_fl{'1' if flat_shading else '0'}"
             f"_uv{uv_cksum}"
+            f"_gh{graph_hash}"
         )
 
         # Pack geometry as binary blob (sent once per client per version)
@@ -448,6 +785,25 @@ def get_scene_data():
             "alphaTest":         alpha_test,
             "flatShading":       flat_shading,
             "version":           version,
+            # Principled BSDF physical channels (scalars)
+            "clearcoat":            clearcoat,
+            "clearcoatRoughness":   clearcoat_roughness,
+            "sheen":                sheen,
+            "sheenRoughness":       sheen_roughness,
+            "sheenTint":            sheen_tint,
+            "iridescence":          iridescence,
+            "iridescenceIOR":       iridescence_ior,
+            "iridescenceThicknessMin": iridescence_thickness_min,
+            "iridescenceThicknessMax": iridescence_thickness_max,
+            "anisotropy":           anisotropy,
+            "transmission":         transmission,
+            "thickness":            thickness,
+            "ior":                  ior,
+            "specularIntensity":    specular_ior,
+            "specularColor":        [1.0 + (c - 1.0) * specular_tint for c in color],
+            "attenuationDistance":  attenuation_distance,
+            "attenuationColor":     attenuation_color,
+            "normalScale":          normal_scale,
         })
         if texture:
             obj_data["texture"] = texture
@@ -459,6 +815,30 @@ def get_scene_data():
             obj_data["normalMap"] = normal_map
         if emissive_map:
             obj_data["emissiveMap"] = emissive_map
+        if clearcoat_map:
+            obj_data["clearcoatMap"] = clearcoat_map
+        if clearcoat_roughness_map:
+            obj_data["clearcoatRoughnessMap"] = clearcoat_roughness_map
+        if clearcoat_normal_map:
+            obj_data["clearcoatNormalMap"] = clearcoat_normal_map
+        if sheen_color_map:
+            obj_data["sheenColorMap"] = sheen_color_map
+        if sheen_roughness_map:
+            obj_data["sheenRoughnessMap"] = sheen_roughness_map
+        if iridescence_map:
+            obj_data["iridescenceMap"] = iridescence_map
+        if anisotropy_map:
+            obj_data["anisotropyMap"] = anisotropy_map
+        if transmission_map:
+            obj_data["transmissionMap"] = transmission_map
+        if thickness_map:
+            obj_data["thicknessMap"] = thickness_map
+        if specular_ior_map:
+            obj_data["specularIntensityMap"] = specular_ior_map
+        if specular_color_map:
+            obj_data["specularColorMap"] = specular_color_map
+        if graph:
+            obj_data["graph"] = {"nodes": graph}
 
         data["objects"].append(obj_data)
 
@@ -556,7 +936,6 @@ def _extract_textures():
 
     Returns dict of image_name → (mime_type, bytes_data, cache_key)."""
     textures = {}
-    INPUTS = ('Base Color', 'Roughness', 'Metallic', 'Normal', 'Emission Color')
 
     for obj in bpy.context.scene.objects:
         if obj.type != 'MESH':
@@ -565,43 +944,43 @@ def _extract_textures():
         if not mat or not mat.use_nodes:
             continue
 
+        # Upload every image referenced anywhere in the material's node graph
+        # (Image Texture / Environment Texture nodes) — the graph can sample a
+        # texture from any socket, not just the five classic Principled inputs.
         for node in mat.node_tree.nodes:
-            if node.type != 'BSDF_PRINCIPLED':
+            if node.type not in ('TEX_IMAGE', 'TEX_ENVIRONMENT'):
                 continue
-            for input_name in INPUTS:
-                sock = node.inputs.get(input_name)
-                img = _find_image_texture(sock)  # direct bpy Image reference
-                if img is None:
-                    continue
-                name = img.name
-                if name in textures:
-                    continue
+            img = getattr(node, 'image', None)
+            if img is None:
+                continue
+            name = img.name
+            if name in textures:
+                continue
 
-                # Get encoded image bytes (PNG / JPG / WebP)
-                img_bytes, mime, ext = _get_image_bytes(img)
-                if img_bytes is None:
-                    print(f"[B3Sync] WARNING: no image data for '{name}'")
-                    continue
+            # Get encoded image bytes (PNG / JPG / WebP)
+            img_bytes, mime, ext = _get_image_bytes(img)
+            if img_bytes is None:
+                print(f"[B3Sync] WARNING: no image data for '{name}'")
+                continue
 
-                w, h = img.size
-                key = f"{name}_{w}x{h}"
+            w, h = img.size
+            key = f"{name}_{w}x{h}"
 
-                # Check cache
-                with _lock:
-                    cached = _state["tex_cache"].get(name)
-                if cached is not None and cached[2] == key:
-                    textures[name] = cached
-                    continue
+            # Check cache
+            with _lock:
+                cached = _state["tex_cache"].get(name)
+            if cached is not None and cached[2] == key:
+                textures[name] = cached
+                continue
 
-                result = (mime, img_bytes, key)
-                textures[name] = result
+            result = (mime, img_bytes, key)
+            textures[name] = result
 
-                with _lock:
-                    _state["tex_cache"][name] = result
-                    for ws_set in _state["tex_sent"].values():
-                        ws_set.discard(name)
-                print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
-            break
+            with _lock:
+                _state["tex_cache"][name] = result
+                for ws_set in _state["tex_sent"].values():
+                    ws_set.discard(name)
+            print(f"[B3Sync] Texture extracted: {name} ({w}×{h}, {ext})")
 
     # Purge stale cache entries
     with _lock:

@@ -646,7 +646,8 @@ function sanitiseName(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, "_");
 }
 
-/** Texture names referenced by any object in the scene. */
+/** Texture names referenced by any object in the scene — classic + physical
+ *  channel maps, plus images referenced by the shader node graph. */
 function referencedTextures(scene: SceneData): Set<string> {
   const names = new Set<string>();
   for (const obj of scene.objects) {
@@ -656,8 +657,26 @@ function referencedTextures(scene: SceneData): Set<string> {
       obj.metalnessMap,
       obj.normalMap,
       obj.emissiveMap,
+      obj.clearcoatMap,
+      obj.clearcoatRoughnessMap,
+      obj.clearcoatNormalMap,
+      obj.sheenColorMap,
+      obj.sheenRoughnessMap,
+      obj.iridescenceMap,
+      obj.iridescenceThicknessMap,
+      obj.anisotropyMap,
+      obj.transmissionMap,
+      obj.thicknessMap,
+      obj.specularColorMap,
+      obj.specularIntensityMap,
     ]) {
       if (ref) names.add(ref);
+    }
+    // Graph TEX_IMAGE / TEX_ENVIRONMENT nodes reference images by name.
+    for (const n of obj.graph?.nodes ?? []) {
+      if (n.type !== "tex-image" && n.type !== "tex-environment") continue;
+      const sock = n.inputs.find((s) => s.name === "image");
+      if (sock && typeof sock.value === "string") names.add(sock.value);
     }
   }
   return names;
